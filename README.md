@@ -1,4 +1,6 @@
+# Deterministic Finite Blockchains
 
+## Helper Code
 ```bash
 cd cardano-node
 git fetch --all --recurse-submodules --tags
