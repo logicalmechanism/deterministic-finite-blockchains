@@ -127,9 +127,24 @@ class OffChain:
         if bool(url_response) is True:
             amount = url_response['amount']
             for asset in amount:
+                print(asset['unit'])
                 self.currency[asset['unit']] = int(asset['quantity'])
 
-
+    
+    def find_specific_asset(self, asset:str) -> None:
+        """
+        Return the policy id and asset name for a spceific asset concatenation.
+        
+        >>> x = OffChain("", "")
+        >>> x.find_specific_asset('')
+        {}
+        """
+        url = 'https://cardano-mainnet.blockfrost.io/api/v0/assets/{}'.format(asset)
+        url_response = self.get(url)
+        print(url_response)
+        if bool(url_response) is True:
+            return url_response['policy_id'], bytes.fromhex(url_response['asset_name']).decode('utf-8')
+        
 if __name__ == '__main__':
     import doctest
     doctest.testmod()

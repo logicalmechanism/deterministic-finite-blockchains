@@ -1,6 +1,7 @@
-from offchain import OffChain
-from dfbchain import DFB
-from sys import exit
+from offchain    import OffChain
+from dfbchain    import DFB
+from transaction import Tx
+from sys         import exit
 
 def run_dfb():
     # Requires Blockfrost API Key.
@@ -30,6 +31,9 @@ def run_dfb():
         dfb.increment_block_number()
     # Build outgoing transactions with DFB output
     print(dfb.wallets)
+
+    tx = Tx(False, script_address)
+    tx.run_game()
 
 
 if __name__ == "__main__":
