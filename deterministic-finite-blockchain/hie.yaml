@@ -1,0 +1,6 @@
+cradle:
+  cabal:
+    - path: "./dfb-contract/src"
+      component: "dfb-contract:lib:dfb-contract"
+    - path: "./dfb-contract/pab"
+      component: "dfb-contract:exe:plutus-starter-pab"
