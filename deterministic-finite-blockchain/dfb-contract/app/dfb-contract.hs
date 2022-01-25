@@ -11,7 +11,7 @@ main :: IO ()
 main = do
   args <- getArgs
   let nargs = length args
-  let scriptnum = if nargs > 0 then read (args!!0) else 42
+  let scriptnum = if nargs > 0 then read (args!!0) else 420
   let scriptname = if nargs > 1 then args!!1 else  "dfb_contract.plutus"
   putStrLn $ "OUTPUT: " ++ scriptname
   writePlutusScript scriptnum scriptname dfbContractScript dfbContractScriptShortBs
