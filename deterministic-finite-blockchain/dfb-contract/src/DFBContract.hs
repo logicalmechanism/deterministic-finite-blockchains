@@ -32,26 +32,32 @@ module DFBContract
   , Schema
   , CustomDatumType
   , contract
+  , baseQ
+  , reduction
+  , strToInt
+  , listOfTuplePairs
+  , getHashFromString
+  , removeZeros
   ) where
 
 import           Cardano.Api.Shelley       (PlutusScript (..), PlutusScriptV1)
 
 import           Codec.Serialise           ( serialise )
-import           Control.Monad ( void )
+-- import           Control.Monad ( void )
 -- import           Control.Monad.Freer.Error ( throwError )
 
 import qualified Data.ByteString.Lazy      as LBS
 import qualified Data.ByteString.Short     as SBS
 -- import qualified Data.Maybe
 
-import           Prelude                   (String)
+-- import           Prelude                   (String)
 
 import           Ledger                    hiding ( singleton )
-import qualified Ledger.Constraints        as Constraints
+-- import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
-import qualified Ledger.CardanoWallet      as CW
+-- import qualified Ledger.CardanoWallet      as CW
 import           Playground.Contract
-import           Wallet.Emulator.Wallet    as W
+-- import           Wallet.Emulator.Wallet    as W
 
 
 import qualified PlutusTx
@@ -59,15 +65,15 @@ import           PlutusTx.Prelude
 -- import           PlutusTx.Builtins         as Internal
 import qualified PlutusTx.Builtins.Internal as Internal
 import           Plutus.Contract
-import qualified Plutus.Trace.Emulator     as Trace
-import qualified Plutus.V1.Ledger.Ada      as Ada
+-- import qualified Plutus.Trace.Emulator     as Trace
+-- import qualified Plutus.V1.Ledger.Ada      as Ada
 import qualified Plutus.V1.Ledger.Scripts  as Plutus
-import qualified Plutus.V1.Ledger.Value    as Value
+-- import qualified Plutus.V1.Ledger.Value    as Value
 
-import Plutus.Contracts.Currency qualified as Currency
-import Data.Semigroup qualified as Semigroup
+-- import Plutus.Contracts.Currency qualified as Currency
+-- import Data.Semigroup qualified as Semigroup
 -- import Data.Void (Void)
-import Plutus.Trace.Emulator qualified as Emulator
+-- import Plutus.Trace.Emulator qualified as Emulator
 
 {- |
   Author   : The Ancient Kraken
@@ -86,7 +92,7 @@ PlutusTx.makeLift ''DFBContractParams
 -------------------------------------------------------------------------------
 -- | Create the datum parameters data object.
 -------------------------------------------------------------------------------
-data CustomDatumType = CustomDatumType 
+data CustomDatumType = CustomDatumType
   { cdtPlayerPKH :: !PubKeyHash
   -- ^ The players pkh.
   , cdtValue     :: !Value
@@ -102,13 +108,13 @@ PlutusTx.makeLift ''CustomDatumType
 -- | Create the redeemer parameters data object.
 -------------------------------------------------------------------------------
 
-data CustomRedeemerType = Run | Remove
-    deriving (Generic)
+data CustomRedeemerType = CustomRedeemerType
+  { crtAction    :: !Integer
+  , crtPlayerPKH :: !PubKeyHash
+  }
+    deriving stock (Show, Generic)
     deriving anyclass (FromJSON, ToJSON, ToSchema)
-PlutusTx.makeIsDataIndexed ''CustomRedeemerType [ ('Run,       0)
-                                                , ('Remove,    1)
-                                                ]
---PlutusTx.unstableMakeIsData ''CustomRedeemerType
+PlutusTx.unstableMakeIsData ''CustomRedeemerType
 PlutusTx.makeLift ''CustomRedeemerType
 
 -------------------------------------------------------------------------------
@@ -139,40 +145,60 @@ PlutusTx.makeLift ''ChainState
 -------------------------------------------------------------------------------
 
 -- | Convert a base 10 integer into base q as a list.
-baseQ :: Integer -> Integer -> [Integer] -> [Integer]
-baseQ 0 _base list = list
-baseQ number base list = baseQ (Internal.divideInteger number base) base ([Internal.modInteger number base] ++ list)
+baseQ :: Integer -> Integer -> [Integer]
+baseQ number base = baseQ' number base []
+  where
+    baseQ' :: Integer -> Integer -> [Integer] -> [Integer]
+    baseQ' 0 _base list = list
+    baseQ' number' base' list = baseQ' (Internal.divideInteger number' base') base' (Internal.modInteger number' base' : list)
 
+removeZeros :: [Integer] -> [Integer]
+removeZeros x = reverse $ removeZeros' $ reverse x
+  where
+    removeZeros' :: [Integer] -> [Integer]
+    removeZeros' [] = []
+    removeZeros' (x':xs')
+      | x' == 0 = removeZeros' xs'
+      | otherwise = xs'
 
 -- | Reduce a number with 3n+1 conjecture.
-reduction :: Integer -> Integer -> Integer
-reduction 0 _counter = 0
-reduction 1 _counter = _counter
-reduction number counter
-  | Internal.modInteger number 2 == 0 = reduction (Internal.divideInteger number 2) (counter + 1)
-  | otherwise = reduction (3 * number + 1) (counter + 1)
+reduction :: Integer -> Integer
+reduction number = reduction' number 0
+  where
+    reduction' :: Integer -> Integer -> Integer
+    reduction' 0 _counter = 0
+    reduction' 1 _counter = _counter
+    reduction' number' counter
+      | Internal.modInteger number' 2 == 0 = reduction' (Internal.divideInteger number' 2) (counter + 1)
+      | otherwise = reduction' (3 * number' + 1) (counter + 1)
+
 
 -- | Take in a bytestring and convert it to a number
-hexStringToInteger :: BuiltinByteString -> Integer -> Integer -> Integer
-hexStringToInteger _hex_string 0 _value = _value
-hexStringToInteger hex_string counter value = hexStringToInteger hex_string (counter - 1) (value * Internal.indexByteString hex_string counter)
+strToInt :: BuiltinByteString -> Integer
+strToInt hexString = hexStringToInteger hexString (Internal.lengthOfByteString hexString - 1) 1
+  where
+    hexStringToInteger :: BuiltinByteString -> Integer -> Integer -> Integer
+    hexStringToInteger _hex_string 0 _value = _value*_value
+    hexStringToInteger hex_string counter value' = hexStringToInteger hex_string (counter - 1) (value' * Internal.indexByteString hex_string counter)
 
 -- | Take two lists and create a list of tuple pairs.
-pairs :: [Integer] -> [Integer] -> [(Integer, Integer)] -> [(Integer, Integer)]
-pairs [] _ p = p
-pairs _ [] p = p
-pairs (x:xs) (y:ys) p = pairs xs ys (p ++ [(x,y)])
+listOfTuplePairs :: [Integer] -> [Integer] -> [(Integer, Integer)]
+listOfTuplePairs a b = pairs a b []
+  where
+    pairs :: [Integer] -> [Integer] -> [(Integer, Integer)] -> [(Integer, Integer)]
+    pairs [] _ p = p
+    pairs _ [] p = p
+    pairs (x:xs) (y:ys) p = pairs xs ys (p ++ [(x,y)])
 
 -- | Take in a ByteString and return a SHA3_256 hash.
 getHashFromString :: BuiltinByteString -> BuiltinByteString
-getHashFromString string = Internal.sha3_256 string
-
+getHashFromString = Internal.sha2_256
 
 -- | The mining function for the chain.
 mining :: BuiltinByteString -> ChainState -> ChainState
 mining blockHash cs = do
-  { let number        = hexStringToInteger blockHash (Internal.lengthOfByteString blockHash) 1
-  ; let miningList    = baseQ number (csPlayers cs) []
+  { let number        = strToInt blockHash
+  ; let miningList    = baseQ number (csPlayers cs)
   ; mine miningList cs
   }
 
@@ -184,15 +210,15 @@ trading :: BuiltinByteString -> ChainState -> ChainState
 trading blockHash cs   = do
   { let tradeAHash     = getHashFromString blockHash
   ; let tradeBHash     = getHashFromString tradeAHash
-  ; let numberA        = hexStringToInteger tradeAHash (Internal.lengthOfByteString tradeAHash) 1
-  ; let numberB        = hexStringToInteger tradeBHash (Internal.lengthOfByteString tradeBHash) 1
-  ; let amount         = reduction numberA 0
-  ; let traderAList    = baseQ numberA (csPlayers cs) []
-  ; let tokenAList     = baseQ numberA (csTokens cs) []
-  ; let traderBList    = baseQ numberB (csPlayers cs) []
-  ; let tokenBList     = baseQ numberB (csTokens cs) []
-  ; let tradingPairs   = pairs traderAList traderBList []
-  ; let tokenPairs     = pairs tokenAList tokenBList []
+  ; let numberA        = strToInt tradeAHash
+  ; let numberB        = strToInt tradeBHash
+  ; let amount         = reduction numberA
+  ; let traderAList    = baseQ numberA (csPlayers cs)
+  ; let tokenAList     = baseQ numberA (csTokens cs)
+  ; let traderBList    = baseQ numberB (csPlayers cs)
+  ; let tokenBList     = baseQ numberB (csTokens cs)
+  ; let tradingPairs   = listOfTuplePairs traderAList traderBList
+  ; let tokenPairs     = listOfTuplePairs tokenAList tokenBList
   ; trade tradingPairs tokenPairs cs
   }
 
@@ -202,8 +228,8 @@ trade tradingPairs tokenPairs cs = cs
 -- | The checking function for seeing if the chain ends.
 checking :: ChainState -> Bool
 checking cs = do
-  { let a   = (csPool cs) > 0
-  ; let b   = (csFlag cs) == True
+  { let a   = csPool cs > 0
+  ; let b   = csFlag cs
   ; all (==(True :: Bool)) [a,b]
   }
 
@@ -217,33 +243,42 @@ advance cs = cs
 -------------------------------------------------------------------------------
 
 {-# INLINABLE mkValidator #-}
+{-# OPTIONS_GHC -Wno-missing-deriving-strategies #-}
 mkValidator :: DFBContractParams -> CustomDatumType -> CustomRedeemerType -> ScriptContext -> Bool
-mkValidator dfb datum redeemer context =
-  case redeemer of
-      Run    -> traceIfFalse "Token Run Failed" $ runDFB
-      Remove -> traceIfFalse "Token Removal Failed" $ remove
+mkValidator _ datum redeemer context
+  | checkActionFlag = True
+  | otherwise       = traceIfFalse "Validation Error" False
     where
+      -- Either use an integer or use different constructors. What is best?
+      checkActionFlag :: Bool
+      checkActionFlag
+        | actionFlag == 0 = runDFB
+        | actionFlag == 1 = remove
+        | otherwise       = traceIfFalse "Incorrect Action Flag" False -- This can be used as a bypass
+          where
+            actionFlag :: Integer
+            actionFlag = crtAction redeemer
       -------------------------------------------------------------------------
       -- | Different Types of Validators Here
       -------------------------------------------------------------------------
-      
+
       -- | Put all the buy functions together here
       runDFB :: Bool
       runDFB = do
         { let a = True
         ; all (==(True :: Bool)) [a]
         }
-      
+
       -- | Put all the remove functions together here
       remove :: Bool
-      remove = do 
+      remove = do
         { let a = checkTokenRemoval
         ; let b = checkTxSigner playerPKH
-        ; all (==(True :: Bool)) [a]
+        ; all (==(True :: Bool)) [a, b]
         }
-      
+
       -------------------------------------------------------------------------
-      
+
       info :: TxInfo
       info = scriptContextTxInfo context
 
@@ -251,37 +286,37 @@ mkValidator dfb datum redeemer context =
       currentTxOutputs = txInfoOutputs info
 
       -------------------------------------------------------------------------
-      
+
       playerPKH :: PubKeyHash
       playerPKH = cdtPlayerPKH datum
 
       -------------------------------------------------------------------------
-      
+
       playerAddr :: Address
       playerAddr = pubKeyHashAddress playerPKH
 
       -------------------------------------------------------------------------
       tokenValue :: Value
       tokenValue = cdtValue datum
-      
+
       -------------------------------------------------------------------------
-      
-        -- | Check if token is being sent back to the seller wallet.
+
+      -- | Check if token is being sent back to the seller wallet.
       checkTokenRemoval :: Bool
       checkTokenRemoval = checkTxOutForValueAtAddress currentTxOutputs playerAddr tokenValue
 
       -------------------------------------------------------------------------
       checkTxSigner :: PubKeyHash -> Bool
-      checkTxSigner signee = txSignedBy info signee 
+      checkTxSigner signee = txSignedBy info signee
       -- Search each TxOut for the correct address and value.
       checkTxOutForValueAtAddress :: [TxOut] -> Address -> Value -> Bool
       checkTxOutForValueAtAddress [] _addr _val = False
       checkTxOutForValueAtAddress (x:xs) addr val
-        | (traceIfFalse "Incorrect Address" $ (txOutAddress x) == addr) && (traceIfFalse "Incorrect Value" $ (txOutValue x) == val) = True
+        | txOutAddress x == addr && txOutValue x == val = True
         | otherwise = checkTxOutForValueAtAddress xs addr val
-      
 
-      
+
+
 -------------------------------------------------------------------------------
 -- | This determines the data type for Datum and Redeemer.
 -------------------------------------------------------------------------------
