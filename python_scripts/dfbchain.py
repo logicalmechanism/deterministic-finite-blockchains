@@ -1,5 +1,6 @@
 import hashlib
 from functools import reduce
+import random
 """
 """
 class DFB:
@@ -7,16 +8,32 @@ class DFB:
 
     # Data that needs to be stored.
     def __init__(self, wallets: dict, currency: dict, starting_hash: str) -> None:
-        self.wallets      = self.initializeWallets(wallets)
+        self.wallets      = wallets
         self.reserves     = currency
         self.N            = len(wallets)
-        self.tokens       = len(currency) - 1
-        self.halving      = 100
+        self.tokens       = len(currency)
+        self.halving      = 1155
         self.mining_rate  = 50
-        self.mining_pool  = (len(self.bq(self.b10(self.getHash(self.N)), self.N))+2)*self.mining_rate*self.halving*2
+        self.mining_pool  = (len(self.bq(self.b10(self.getHash(self.N)), self.N)))*self.mining_rate*self.halving*2
         self.block_hash   = starting_hash
         self.block_number = 1
         self.extend       = True
+
+    def mixing(self, value: str, wallets: list):
+        """
+        Mix up the wallets
+
+
+        >>> DFB({'a':0,'b':1,'c':1,'d':1}, {}, "").mixing('testing',[1,2,3,4])
+        [4, 3, 1, 2]
+        """
+        mix = self.bq(self.b10(self.getHash(value)), self.N)[:self.N]
+        play = [i for i in range(self.N)]
+        for x,y in zip(play, mix):
+            old = wallets[x]
+            wallets[x] = wallets[y]
+            wallets[y] = old
+        return wallets
 
 
     def increment_block_number(self) -> None:
@@ -24,7 +41,7 @@ class DFB:
         self.block_hash = self.getHash(self.block_hash)
 
 
-    def initializeWallets(self, wallet: dict) -> dict:
+    def initializeWallets(self, wallets: dict) -> dict:
         """
         Return an appended dictionary of all the wallets. 
         This accounts for the mined token.
@@ -36,9 +53,11 @@ class DFB:
             'unit': 'synthetic_asset',
             'quantity': 0
         }
-        for addr in wallet:
-            wallet[addr].append(synthetic_asset)
-        return wallet
+        # print(wallets)
+        for addr in wallets:
+            print(addr, wallets[addr])
+            wallets[addr].append(synthetic_asset)
+        return wallets
 
     
     def mining(self):
@@ -46,14 +65,19 @@ class DFB:
         The Mining sequence.
         """
         mining_list = self.bq(self.b10(self.block_hash), self.N)
+        # print(mining_list)
         list_of_wallets_addr = list(self.wallets)
+        # print(list_of_wallets_addr)
+        list_of_wallets_addr = self.mixing(self.block_hash, list_of_wallets_addr)
+        # print(list_of_wallets_addr)
+        # self.extend = False
         # It reduces to one
         if self.mining_rate <= 1:
             self.mining_rate = 1
         # half the mining rate ever halving
         if self.block_number % self.halving == 0 and self.mining_rate > 1:
             self.mining_rate = self.mining_rate // 2
-        # mine the pool
+            print("Rate: {} Pool: {}".format(self.mining_rate, self.mining_pool))
         for miner in mining_list:
             addr = list_of_wallets_addr[miner]
             if self.mining_pool <= 0:
@@ -62,8 +86,24 @@ class DFB:
                 break
             for index, asset in enumerate(self.wallets[addr]):
                 if asset['unit'] == 'synthetic_asset':
-                    self.wallets[addr][index]['quantity'] += self.mining_rate
+                    # mining_gains[addr] += self.mining_rate
+                    self.wallets[addr][index] = {
+                        'unit': 'synthetic_asset',
+                        'quantity': self.wallets[addr][index]['quantity'] + self.mining_rate
+                    }
                     self.mining_pool -= self.mining_rate
+                    self.reserves['synthetic_asset'] += self.mining_rate
+        # print(mining_gains)
+        # for addr in self.wallets:
+        #     for index, value in enumerate(self.wallets[addr]):
+        #         if value['unit'] == 'synthetic_asset':
+        #             print(addr, value, mining_gains[addr])
+        #             self.wallets[addr][index] = {
+        #                 'unit': 'synthetic_asset',
+        #                 'quantity': mining_gains[addr]
+        #             }
+        # print(self.wallets)
+        # self.extend = False
     
 
     def trading(self):
@@ -74,8 +114,10 @@ class DFB:
         phase_2_number = self.b10(self.getHash(phase_1_number))
         phase_1_tokens = self.bq(phase_1_number, self.tokens)
         phase_2_tokens = self.bq(phase_2_number, self.tokens)
-        phase_1_list = self.bq(phase_1_number, self.N)
-        phase_2_list = self.bq(phase_2_number, self.N)
+        phase_3_number = self.b10(self.getHash(phase_1_number))
+        phase_4_number = self.b10(self.getHash(phase_2_number))
+        phase_1_list = self.bq(phase_3_number, self.N)
+        phase_2_list = self.bq(phase_4_number, self.N)
         list_of_wallets_addr = list(self.wallets)
         list_of_policy_ids = list(self.reserves)
         
@@ -85,46 +127,68 @@ class DFB:
         token_pairs = self.pairs(phase_1_tokens, phase_2_tokens)
         
         # Now lets trade
-        successful_trading_flag = False
         for trade, token in zip(trading_pairs, token_pairs):
             A_addr = list_of_wallets_addr[trade[0]]
             B_addr = list_of_wallets_addr[trade[1]]
             A = self.wallets[A_addr] # assets for wallet A
             B = self.wallets[B_addr] # assets for wallet B
+            # print(trade, token)
             token_1_pid = list_of_policy_ids[token[0]]
             token_2_pid = list_of_policy_ids[token[1]]
+            token_pids = [token_1_pid, token_2_pid]
+            if 'lovelace' in token_pids:
+                continue
             # amount token 1 
             # delta token 2
             delta = self.calculate_delta_amount(token_1_pid, token_2_pid, amount)
             if delta > 0:
-                for tokens in A:
-                    if tokens['unit'] == token_1_pid:
-                        if tokens['quantity']-amount > 0:
-                            successful_trading_flag = True
-            if successful_trading_flag is True:
-                for i in range(len(self.wallets[A_addr])):
-                    if self.wallets[A_addr][i]['unit'] == token_1_pid:
-                        self.wallets[A_addr][i]['quantity'] -= amount
-                    if self.wallets[A_addr][i]['unit'] == token_2_pid:
-                        self.wallets[A_addr][i]['quantity'] += delta
-                    else:
+                # Make sure new currencies are accounted for in the wallet.
+                wallet_A = {}
+                wallet_B = {}
+                for pid in token_pids:
+                    # Wallet A
+                    found_flag = False
+                    for value in self.wallets[A_addr]:
+                        if value['unit'] == pid:
+                            found_flag = True
+                            wallet_A[pid] = value['quantity']
+                            break
+                    if found_flag is False:
                         new_token = {
-                            'unit': token_2_pid,
-                            'quantity': delta
+                            'unit': pid,
+                            'quantity': 0
                         }
+                        wallet_A[pid] = 0
                         self.wallets[A_addr].append(new_token)
-                for i in range(len(self.wallets[B_addr])):
-                    if self.wallets[B_addr][i]['unit'] == token_2_pid:
-                        self.wallets[B_addr][i]['quantity'] -= delta
-                    if self.wallets[B_addr][i]['unit'] == token_1_pid:
-                        self.wallets[B_addr][i]['quantity'] += amount
-                    else:
+                    # Wallet B
+                    found_flag = False
+                    for value in self.wallets[B_addr]:
+                        if value['unit'] == pid:
+                            found_flag = True
+                            wallet_B[pid] = value['quantity']
+                            break
+                    if found_flag is False:
                         new_token = {
-                            'unit': token_1_pid,
-                            'quantity': amount
+                            'unit': pid,
+                            'quantity': 0
                         }
+                        wallet_B[pid] = 0
                         self.wallets[B_addr].append(new_token)
-        self.extend = successful_trading_flag
+                
+                # Check for trade
+                if amount < wallet_A[token_1_pid] and delta < wallet_B[token_2_pid]:
+                    for index, value in enumerate(self.wallets[A_addr]):
+                        if value['unit'] == token_1_pid:
+                            self.wallets[A_addr][index]['quantity'] -= amount
+                        if value['unit'] == token_2_pid:
+                            self.wallets[A_addr][index]['quantity'] += delta
+                    
+                    for index, value in enumerate(self.wallets[B_addr]):
+                        if value['unit'] == token_1_pid:
+                            self.wallets[B_addr][index]['quantity'] += amount
+                        if value['unit'] == token_2_pid:
+                            self.wallets[B_addr][index]['quantity'] -= delta
+                    # successful_trading_flag = True
 
 
     def calculate_delta_amount(self, ith_token_pid, jth_token_pid, ith_amount):

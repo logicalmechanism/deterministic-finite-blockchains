@@ -118,6 +118,15 @@ def hash_script_data(value):
     return process.output(func)
 
 
+def public_key_hash(vkey_path):
+    func = [
+        'cardano-cli',
+        'address',
+        'key-hash',
+        '--payment-verification-key-file', vkey_path
+    ]
+    return process.output(func)
+
 if __name__ == "__main__":
     print("Testing address.py")
 

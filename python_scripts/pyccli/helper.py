@@ -44,6 +44,13 @@ def json_open(tmp, file_name):
         return {}, "File Not Found."
     return data, ""
 
+def json_save(data, tmp, file_name):
+    """
+    Attempts to save a json file.
+    """
+    with open(tmp+file_name, 'w') as file:
+        json.dump(data, file)
+
 
 def whichnet(mainnet_flag):
     """

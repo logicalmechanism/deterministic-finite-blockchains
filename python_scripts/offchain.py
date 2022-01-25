@@ -67,8 +67,11 @@ class OffChain:
         self.find_latest_block() 
         for addr_tx_hash in self.utxo_addr_map:
             addr = self.utxo_addr_map[addr_tx_hash]
-            for curr_tx_hash in self.utxo_curr_map:
-                self.addr_curr_map[addr] = self.utxo_curr_map[curr_tx_hash]
+            # print(addr, addr_tx_hash)
+            self.addr_curr_map[addr] = self.utxo_curr_map[addr_tx_hash]
+            # for curr_tx_hash in self.utxo_curr_map:
+            #     print(curr_tx_hash)
+            #     self.addr_curr_map[addr] = self.utxo_curr_map[curr_tx_hash]
 
 
     def find_all_addresses(self) -> None:
@@ -105,7 +108,6 @@ class OffChain:
             if bool(url_response) is False:
                 break
             for obj in url_response:
-                # print(obj['amount'])
                 for index, token in enumerate(obj['amount']):
                     obj['amount'][index]['quantity'] = int(obj['amount'][index]['quantity'])
                 self.utxo_curr_map[obj['tx_hash']] = obj['amount']
@@ -127,8 +129,24 @@ class OffChain:
         if bool(url_response) is True:
             amount = url_response['amount']
             for asset in amount:
-                print(asset['unit'])
                 self.currency[asset['unit']] = int(asset['quantity'])
+    
+    def print_all_currency_at_address(self, address: str) -> None:
+        """
+        Return a dict of all the currency inside some address.
+        
+        >>> x = OffChain("", "")
+        >>> x.find_all_currency()
+        >>> bool(x.currency)
+        False
+
+        """
+        url = 'https://cardano-testnet.blockfrost.io/api/v0/addresses/{}'.format(address)
+        url_response = self.get(url)
+        if bool(url_response) is True:
+            amount = url_response['amount']
+            for asset in amount:
+                print(int(asset['quantity']), asset['unit'])
 
     
     def find_specific_asset(self, asset:str) -> None:
