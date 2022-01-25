@@ -1,44 +1,33 @@
 # Deterministic Finite Blockchains
 
 ```
-This code is a python off-chain implementation for the DFB.
+This code is a plutus implementation for the DFB based off a python prototype.
 ```
 
-The contract will start simple without endpoints so the off-chain code can be tested.
+Please refer to the [Deterministic Finite Blockchain GitBook](https://ancientkraken.gitbook.io/deterministic-finite-blockchains/) for more information.
 
-Additional endpoints will be added after basic functionality has been tested.
+## Cloning from GitHub
+When cloning the repo be sure to use the recursive submodule parameter with git clone to get all the required contract files.
 
-## Helper Code
-
-For updating the cardano node
-```bash
-cd cardano-node
-git fetch --all --recurse-submodules --tags
-git checkout $(curl -s https://api.github.com/repos/input-output-hk/cardano-node/releases/latest | jq -r .tag_name)
-. /home/cardano/.nix-profile/etc/profile.d/nix.sh
-nix-build -A scripts.testnet.node -o testnet-node-local
-nix-build -A cardano-cli -o cardano-cli-testnet
-./cardano-cli-testnet/bin/cardano-cli --version
-./testnet-node-local/bin/cardano-node-testnet
+```
+git clone --recurse-submodules https://github.com/logicalmechanism/deterministic-finite-blockchains
 ```
 
-Running the cardano testnet
-```bash
-cd cardano-node
-./testnet-node-local/bin/cardano-node-testnet
-```
+# The code requirements
 
-Getting the testnet socket on path
-```bash
-# gets socket on path
-CARDANO_NODE_SOCKET_PATH=../cardano-node/state-node-testnet/node.socket
-../cardano-node/cardano-cli-testnet/bin/cardano-cli query tip --testnet-magic 1097911063
 ```
+cardano-cli version
+# cardano-cli 1.33.0 - linux-x86_64 - ghc-8.10
+# git rev 814df2c146f5d56f8c35a681fe75e85b905aed5d
 
-Building the smart contract
-```bash
-cabal clean
-cabal build -w ghc-8.10.4
-cabal run dfb-contract
-echo "done"
+cardano-node version
+#cardano-node 1.33.0 - linux-x86_64 - ghc-8.10
+#git rev 814df2c146f5d56f8c35a681fe75e85b905aed5d
+
+cabal --version
+# cabal-install version 3.4.0.0
+# compiled using version 3.4.0.0 of the Cabal library
+
+ghc --version
+# The Glorious Glasgow Haskell Compilation System, version 8.10.4
 ```
