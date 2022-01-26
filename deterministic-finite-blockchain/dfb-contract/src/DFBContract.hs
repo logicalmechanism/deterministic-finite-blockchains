@@ -32,48 +32,30 @@ module DFBContract
   , Schema
   , CustomDatumType
   , contract
-  , baseQ
-  , reduction
-  , strToInt
-  , listOfTuplePairs
+  , listLength
   , getHashFromString
-  , removeZeros
   ) where
 
 import           Cardano.Api.Shelley       (PlutusScript (..), PlutusScriptV1)
 
 import           Codec.Serialise           ( serialise )
--- import           Control.Monad ( void )
--- import           Control.Monad.Freer.Error ( throwError )
 
 import qualified Data.ByteString.Lazy      as LBS
 import qualified Data.ByteString.Short     as SBS
--- import qualified Data.Maybe
-
--- import           Prelude                   (String)
+import qualified Data.Maybe
 
 import           Ledger                    hiding ( singleton )
--- import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
--- import qualified Ledger.CardanoWallet      as CW
 import           Playground.Contract
--- import           Wallet.Emulator.Wallet    as W
-
-
+import qualified Prelude as P (init)
 import qualified PlutusTx
-import           PlutusTx.Prelude
--- import           PlutusTx.Builtins         as Internal
 import qualified PlutusTx.Builtins.Internal as Internal
+import           PlutusTx.Prelude
 import           Plutus.Contract
--- import qualified Plutus.Trace.Emulator     as Trace
--- import qualified Plutus.V1.Ledger.Ada      as Ada
 import qualified Plutus.V1.Ledger.Scripts  as Plutus
--- import qualified Plutus.V1.Ledger.Value    as Value
+import qualified Plutus.V1.Ledger.Value    as Value
+import qualified Plutus.V1.Ledger.Ada      as Ada
 
--- import Plutus.Contracts.Currency qualified as Currency
--- import Data.Semigroup qualified as Semigroup
--- import Data.Void (Void)
--- import Plutus.Trace.Emulator qualified as Emulator
 
 {- |
   Author   : The Ancient Kraken
@@ -93,17 +75,31 @@ PlutusTx.makeLift ''DFBContractParams
 -- | Create the datum parameters data object.
 -------------------------------------------------------------------------------
 data CustomDatumType = CustomDatumType
-  { cdtPlayerPKH :: !PubKeyHash
-  -- ^ The players pkh.
-  , cdtValue     :: !Value
-  -- ^ The current state of the lovelace distribution.
+  { cdtOwnerPKH    :: !PubKeyHash
+  , cdtPlayers     :: !Integer
+  , cdtMiningPool  :: !Integer
+  , cdtMiningRate  :: !Integer
+  , cdtHalvingRate :: !Integer
+  , cdtBlockNumber :: !Integer
+  , cdtWalletState :: ![Value]
+  , cdtPlayersPKH  :: ![PubKeyHash]
+  , cdtStartPhrase :: !BuiltinByteString
+  , cdtValidate    :: !Integer
+  , cdtChainHashes :: ![BuiltinByteString]
+  , cdtChainBlocks :: ![Integer]
   }
     deriving stock (Show, Generic)
     deriving anyclass (FromJSON, ToJSON, ToSchema)
 PlutusTx.unstableMakeIsData ''CustomDatumType
 PlutusTx.makeLift ''CustomDatumType
 
-
+instance PlutusTx.Prelude.Eq CustomDatumType where
+  {-# INLINABLE (==) #-}
+  old == new = ( cdtOwnerPKH    old == cdtOwnerPKH    new) &&
+               ( cdtPlayers     old == cdtPlayers     new) &&
+               ( cdtMiningPool  old == cdtMiningPool  new) &&
+               ( cdtMiningRate  old == cdtMiningRate  new) &&
+               ( cdtHalvingRate old == cdtHalvingRate new)
 -------------------------------------------------------------------------------
 -- | Create the redeemer parameters data object.
 -------------------------------------------------------------------------------
@@ -118,132 +114,26 @@ PlutusTx.unstableMakeIsData ''CustomRedeemerType
 PlutusTx.makeLift ''CustomRedeemerType
 
 -------------------------------------------------------------------------------
--- | Create the Chain State data object.
--------------------------------------------------------------------------------
-
-data ChainState = ChainState
-  { csPlayers :: !Integer
-  -- ^ The number of players playing in the chain.
-  , csTokens  :: !Integer
-  -- ^ The number of tokens used in the chain.
-  , csWallets :: ![[Integer]]
-  -- ^ The wallet list.
-  , csRate    :: !Integer
-  -- ^ The mining rate.
-  , csPool    :: !Integer
-  -- ^ The mining pool.
-  , csNumber  :: !Integer
-  -- ^ The block number for the chain.
-  , csFlag    :: !Bool
-  -- ^ The trading flag.
-  }
-PlutusTx.unstableMakeIsData ''ChainState
-PlutusTx.makeLift ''ChainState
-
--------------------------------------------------------------------------------
 -- | Helper Functions
 -------------------------------------------------------------------------------
-
--- | Convert a base 10 integer into base q as a list.
-baseQ :: Integer -> Integer -> [Integer]
-baseQ number base = baseQ' number base []
-  where
-    baseQ' :: Integer -> Integer -> [Integer] -> [Integer]
-    baseQ' 0 _base list = list
-    baseQ' number' base' list = baseQ' (Internal.divideInteger number' base') base' (Internal.modInteger number' base' : list)
-
-removeZeros :: [Integer] -> [Integer]
-removeZeros x = reverse $ removeZeros' $ reverse x
-  where
-    removeZeros' :: [Integer] -> [Integer]
-    removeZeros' [] = []
-    removeZeros' (x':xs')
-      | x' == 0 = removeZeros' xs'
-      | otherwise = xs'
-
--- | Reduce a number with 3n+1 conjecture.
-reduction :: Integer -> Integer
-reduction number = reduction' number 0
-  where
-    reduction' :: Integer -> Integer -> Integer
-    reduction' 0 _counter = 0
-    reduction' 1 _counter = _counter
-    reduction' number' counter
-      | Internal.modInteger number' 2 == 0 = reduction' (Internal.divideInteger number' 2) (counter + 1)
-      | otherwise = reduction' (3 * number' + 1) (counter + 1)
-
-
--- | Take in a bytestring and convert it to a number
-strToInt :: BuiltinByteString -> Integer
-strToInt hexString = hexStringToInteger hexString (Internal.lengthOfByteString hexString - 1) 1
-  where
-    hexStringToInteger :: BuiltinByteString -> Integer -> Integer -> Integer
-    hexStringToInteger _hex_string 0 _value = _value*_value
-    hexStringToInteger hex_string counter value' = hexStringToInteger hex_string (counter - 1) (value' * Internal.indexByteString hex_string counter)
-
--- | Take two lists and create a list of tuple pairs.
-listOfTuplePairs :: [Integer] -> [Integer] -> [(Integer, Integer)]
-listOfTuplePairs a b = pairs a b []
-  where
-    pairs :: [Integer] -> [Integer] -> [(Integer, Integer)] -> [(Integer, Integer)]
-    pairs [] _ p = p
-    pairs _ [] p = p
-    pairs (x:xs) (y:ys) p = pairs xs ys (p ++ [(x,y)])
-
--- | Take in a ByteString and return a SHA3_256 hash.
+-- | Take in a ByteString and return a SHA2_256 hash.
+{-# INLINABLE getHashFromString #-}
 getHashFromString :: BuiltinByteString -> BuiltinByteString
-getHashFromString = Internal.sha2_256
+getHashFromString = Internal.blake2b_256
 
--- | The mining function for the chain.
-mining :: BuiltinByteString -> ChainState -> ChainState
-mining blockHash cs = do
-  { let number        = strToInt blockHash
-  ; let miningList    = baseQ number (csPlayers cs)
-  ; mine miningList cs
-  }
 
-mine :: [Integer] -> ChainState -> ChainState
-mine miningList cs = cs
-
--- | The trading function for the chain.
-trading :: BuiltinByteString -> ChainState -> ChainState
-trading blockHash cs   = do
-  { let tradeAHash     = getHashFromString blockHash
-  ; let tradeBHash     = getHashFromString tradeAHash
-  ; let numberA        = strToInt tradeAHash
-  ; let numberB        = strToInt tradeBHash
-  ; let amount         = reduction numberA
-  ; let traderAList    = baseQ numberA (csPlayers cs)
-  ; let tokenAList     = baseQ numberA (csTokens cs)
-  ; let traderBList    = baseQ numberB (csPlayers cs)
-  ; let tokenBList     = baseQ numberB (csTokens cs)
-  ; let tradingPairs   = listOfTuplePairs traderAList traderBList
-  ; let tokenPairs     = listOfTuplePairs tokenAList tokenBList
-  ; trade tradingPairs tokenPairs cs
-  }
-
-trade :: [(Integer, Integer)] -> [(Integer, Integer)] -> ChainState -> ChainState
-trade tradingPairs tokenPairs cs = cs
-
--- | The checking function for seeing if the chain ends.
-checking :: ChainState -> Bool
-checking cs = do
-  { let a   = csPool cs > 0
-  ; let b   = csFlag cs
-  ; all (==(True :: Bool)) [a,b]
-  }
-
--- | Advance the chain into the new block.
-advance :: ChainState -> ChainState
-advance cs = cs
-
+{-# INLINABLE listLength #-}
+listLength :: [a] -> Integer
+listLength arr = countHowManyElements arr 0
+  where
+    countHowManyElements [] counter = counter
+    countHowManyElements (_:xs) counter = countHowManyElements xs (counter + 1)
 
 -------------------------------------------------------------------------------
 -- | mkValidator :: Data -> Datum -> Redeemer -> ScriptContext -> Bool
 -------------------------------------------------------------------------------
 
 {-# INLINABLE mkValidator #-}
-{-# OPTIONS_GHC -Wno-missing-deriving-strategies #-}
 mkValidator :: DFBContractParams -> CustomDatumType -> CustomRedeemerType -> ScriptContext -> Bool
 mkValidator _ datum redeemer context
   | checkActionFlag = True
@@ -252,8 +142,9 @@ mkValidator _ datum redeemer context
       -- Either use an integer or use different constructors. What is best?
       checkActionFlag :: Bool
       checkActionFlag
-        | actionFlag == 0 = runDFB
-        | actionFlag == 1 = remove
+        | actionFlag == 0 = joinDFB
+        | actionFlag == 1 = stopDFB
+        | actionFlag == 2 = leaveDFB
         | otherwise       = traceIfFalse "Incorrect Action Flag" False -- This can be used as a bypass
           where
             actionFlag :: Integer
@@ -262,58 +153,143 @@ mkValidator _ datum redeemer context
       -- | Different Types of Validators Here
       -------------------------------------------------------------------------
 
-      -- | Put all the buy functions together here
-      runDFB :: Bool
-      runDFB = do
-        { let a = True
-        ; all (==(True :: Bool)) [a]
+      -- | A player can join the game.
+      joinDFB :: Bool
+      joinDFB = do
+        { let cdt = embeddedDatum scriptTxOutputs
+        ; let a = traceIfFalse "UTxO Must Go To Script"  $ checkContTxOutForValue scriptTxOutputs (totalValue $ cdtWalletState cdt)
+        ; let b = traceIfFalse "Incorrect Datum Values"  $ cdt == datum
+        ; let c = traceIfFalse "Spending Multiple UTxOs" checkForSingleScriptInput
+        ; let d = traceIfFalse "Incorret Player Data"    $ listLength (cdtPlayersPKH cdt) == listLength (cdtWalletState cdt)
+        ; let e = traceIfFalse "Too Many Players"        $ listLength (cdtPlayersPKH cdt) <= cdtPlayers datum
+        ; let f = traceIfFalse "Incorrect Start Phrase"  $ cdtStartPhrase cdt == cdtStartPhrase datum
+        ; let g = traceIfFalse "A player is missing"     $ reverse (tail $ reverse $ cdtPlayersPKH cdt) == cdtPlayersPKH datum
+        ; let h = traceIfFalse "A wallet is missing"     $ reverse (tail $ reverse $ cdtWalletState cdt) == cdtWalletState datum
+        ; all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
         }
 
-      -- | Put all the remove functions together here
-      remove :: Bool
-      remove = do
-        { let a = checkTokenRemoval
-        ; let b = checkTxSigner playerPKH
-        ; all (==(True :: Bool)) [a, b]
+      -- | The game owner can stop the game.
+      stopDFB :: Bool
+      stopDFB = do
+        { let a = traceIfFalse "Wrong signer" $ checkTxSigner ownerPKH
+        ; let b = traceIfFalse "Wrong paymnet" $ checkAllPayments (cdtPlayersPKH datum) (cdtWalletState datum)
+        ; all (==(True :: Bool)) [a,b]
         }
 
+      -- | A player leaves the game.
+      leaveDFB :: Bool
+      leaveDFB = do
+        { let cdt = embeddedDatum scriptTxOutputs
+        ; let a = traceIfFalse "Incorrect Signer"            $ checkTxSigner $ crtPlayerPKH redeemer
+        ; let b = traceIfFalse "Incorrect Datum Values"      $ cdt == datum
+        ; let c = traceIfFalse "BuiltinString"               $ checkContTxOutForValue scriptTxOutputs (totalValue $ cdtWalletState cdt)
+        ; let d = traceIfFalse "Incorret Player Data"        $ listLength (cdtPlayersPKH cdt) == listLength (cdtWalletState cdt)
+        ; let e = traceIfFalse "Incorrect Start Phrase"      $ cdtStartPhrase cdt == cdtStartPhrase datum
+        ; let f = traceIfFalse "Value is not being returned" $ checkTxOutForValueAtPKH currentTxOutputs (crtPlayerPKH redeemer) (findValue $ crtPlayerPKH redeemer)
+        ; all (==(True :: Bool)) [a,b,c,d,e,f]
+        }
+
+      -- runDFB :: Bool
+      -- runDFB = True
       -------------------------------------------------------------------------
 
       info :: TxInfo
       info = scriptContextTxInfo context
+
+      -- All the outputs going back to the script.
+      scriptTxOutputs  :: [TxOut]
+      scriptTxOutputs  = getContinuingOutputs context
 
       currentTxOutputs :: [TxOut]
       currentTxOutputs = txInfoOutputs info
 
       -------------------------------------------------------------------------
 
-      playerPKH :: PubKeyHash
-      playerPKH = cdtPlayerPKH datum
+      ownerPKH :: PubKeyHash
+      ownerPKH = cdtOwnerPKH datum
 
       -------------------------------------------------------------------------
+      -- values
+      emptyValue :: Value
+      emptyValue = Ada.lovelaceValueOf 0
 
-      playerAddr :: Address
-      playerAddr = pubKeyHashAddress playerPKH
+      totalValue :: [Value] -> Value
+      totalValue wallets = combineValues wallets emptyValue
+        where
+          combineValues []     value' = value'
+          combineValues (x:xs) value' = combineValues xs (value' <> x)
 
-      -------------------------------------------------------------------------
-      tokenValue :: Value
-      tokenValue = cdtValue datum
-
-      -------------------------------------------------------------------------
-
-      -- | Check if token is being sent back to the seller wallet.
-      checkTokenRemoval :: Bool
-      checkTokenRemoval = checkTxOutForValueAtAddress currentTxOutputs playerAddr tokenValue
+      findValue :: PubKeyHash -> Value
+      findValue pkh = pickOutValue (cdtPlayersPKH datum) (cdtWalletState datum) pkh
+        where
+          pickOutValue :: [PubKeyHash] -> [Value] -> PubKeyHash -> Value
+          pickOutValue _ [] _ = emptyValue
+          pickOutValue [] _ _ = emptyValue
+          pickOutValue (x:xs) (y:ys) pkh'
+            | x == pkh' = y
+            | otherwise = pickOutValue xs ys pkh'
 
       -------------------------------------------------------------------------
       checkTxSigner :: PubKeyHash -> Bool
       checkTxSigner signee = txSignedBy info signee
+
+      -- Check for embedded datum in the txout
+      embeddedDatum :: [TxOut] -> CustomDatumType
+      embeddedDatum [] = datum
+      embeddedDatum (x:xs) = case txOutDatumHash x of
+        Nothing -> embeddedDatum xs
+        Just dh -> case findDatum dh info of
+          Nothing         -> datum
+          Just (Datum d)  -> Data.Maybe.fromMaybe datum (PlutusTx.fromBuiltinData d)
+
+      -- | Search each TxOut for the value.
+      checkContTxOutForValue :: [TxOut] -> Value -> Bool
+      checkContTxOutForValue [] _val = False
+      checkContTxOutForValue (x:xs) val
+        | checkVal  = True
+        | otherwise = checkContTxOutForValue xs val
+        where
+          checkVal :: Bool
+          checkVal = Value.geq (txOutValue x) val
+
       -- Search each TxOut for the correct address and value.
-      checkTxOutForValueAtAddress :: [TxOut] -> Address -> Value -> Bool
-      checkTxOutForValueAtAddress [] _addr _val = False
-      checkTxOutForValueAtAddress (x:xs) addr val
-        | txOutAddress x == addr && txOutValue x == val = True
-        | otherwise = checkTxOutForValueAtAddress xs addr val
+      checkTxOutForValueAtPKH :: [TxOut] -> PubKeyHash -> Value -> Bool
+      checkTxOutForValueAtPKH [] _pkh _val = False
+      checkTxOutForValueAtPKH (x:xs) pkh val
+        | checkAddr && checkVal = True
+        | otherwise             = checkTxOutForValueAtPKH xs pkh val
+        where
+          checkAddr :: Bool
+          checkAddr = txOutAddress x == pubKeyHashAddress pkh
+
+          checkVal :: Bool
+          checkVal = txOutValue x == val
+
+      -- Force a single script utxo input.
+      checkForSingleScriptInput :: Bool
+      checkForSingleScriptInput = loopInputs (txInfoInputs info) 0
+        where
+          loopInputs :: [TxInInfo] -> Integer -> Bool
+          loopInputs []     counter = counter == 1
+          loopInputs (x:xs) counter = case txOutDatumHash $ txInInfoResolved x of
+              Nothing -> do
+                if counter > 1
+                  then loopInputs [] counter
+                  else loopInputs xs counter
+              Just _  -> do
+                if counter > 1
+                  then loopInputs [] counter
+                  else loopInputs xs (counter + 1)
+
+
+      -- Loop the pkh and amount lists, checking each case.
+      checkAllPayments :: [PubKeyHash] -> [Value] -> Bool
+      checkAllPayments []     []     = True
+      checkAllPayments []     _      = True
+      checkAllPayments _      []     = True
+      checkAllPayments (x:xs) (y:ys)
+        | checkTxOutForValueAtPKH currentTxOutputs x y = checkAllPayments xs ys
+        | otherwise = traceIfFalse "A Member Of The Group Is Not Being Paid." False
 
 
 
@@ -356,76 +332,12 @@ dfbContractScriptShortBs = SBS.toShort . LBS.toStrict $ serialise script
 dfbContractScript :: PlutusScript PlutusScriptV1
 dfbContractScript = PlutusScriptSerialised dfbContractScriptShortBs
 
-
-
-
 -------------------------------------------------------------------------------
 -- | Off Chain
 -------------------------------------------------------------------------------
--- valHash :: Ledger.ValidatorHash
--- valHash = Scripts.validatorHash (typedValidator dfb)
---   where dfb = DFBContractParams {}
--- data JoinParams = JoinParams
---     { amount :: !Value
---     } deriving (Generic, ToJSON, FromJSON, ToSchema)
--- | The schema of the contract, with two endpoints.
+
 type Schema =
     Endpoint "" ()
-    -- Endpoint "join" JoinParams
-    -- .\/ Endpoint "run" CustomDatumType
-    -- .\/ Endpoint "remove" JoinParams
 
 contract :: AsContractError e => Contract () Schema e ()
 contract = selectList [] >> contract
--- contract = selectList [join, run, remove] >> contract
--- scrAddress :: Ledger.Address
--- scrAddress = scriptAddress validator
--- -- | The buy endpoint.
--- run :: AsContractError e => Promise () Schema e ()
--- run =  endpoint @"run" @CustomDatumType $ \(CustomDatumType {..}) -> do
---     buyer          <- pubKeyHash <$> Plutus.Contract.ownPubKey
---     unspentOutputs <- utxosAt (Ledger.scriptAddress $ Scripts.validatorScript (typedValidator dfb))
---     let tx = collectFromScript unspentOutputs Run PlutusTx.Prelude.<> Constraints.mustPayToPubKey buyer cdtValue
---     void $ submitTxConstraintsSpending (typedValidator dfb) unspentOutputs tx
---         where dfb = DFBContractParams {}
-
--- -- | The remove endpoint.
--- remove :: AsContractError e => Promise () Schema e ()
--- remove =  endpoint @"remove" @JoinParams $ \(JoinParams {..}) -> do
---     player         <- pubKeyHash <$> Plutus.Contract.ownPubKey
---     unspentOutputs <- utxosAt scrAddress
---     logInfo @String $ "Unspent Outputs"
---     logInfo @(Map TxOutRef ChainIndexTxOut) $ unspentOutputs
---     let gameDatum = CustomDatumType {cdtPlayerPKH = player, cdtValue = amount}
---     logInfo @String $ "Datum Hash"
---     logInfo @DatumHash $ Ledger.datumHash (Datum (PlutusTx.toBuiltinData gameDatum))
---     -- let flt _ ciTxOut = either id Ledger.datumHash (Tx._ciTxOutDatum ciTxOut) == Ledger.datumHash (Datum (PlutusTx.toBuiltinData gameDatum)) && Tx._ciTxOutValue ciTxOut == amount
---     let flt _ ciTxOut = Tx._ciTxOutValue ciTxOut == amount
---     let tx = collectFromScriptFilter flt unspentOutputs Remove PlutusTx.Prelude.<> mconcat [Constraints.mustSpendScriptOutput oref (Redeemer $ PlutusTx.toBuiltinData Remove) | oref <- (fst <$> Map.toList unspentOutputs)] PlutusTx.Prelude.<> Constraints.mustPayToPubKey player amount PlutusTx.Prelude.<> Constraints.mustBeSignedBy player
---     -- let tx = collectFromScriptFilter flt unspentOutputs Remove PlutusTx.Prelude.<> Constraints.mustPayToPubKey player amount PlutusTx.Prelude.<> Constraints.mustBeSignedBy player
---     logInfo @String $ "TX"
---     logInfo @(Constraints.TxConstraints CustomRedeemerType CustomDatumType) $ tx
---     logInfo @Bool $ Constraints.isSatisfiable tx
---     --void $ submitTxConstraintsSpending (typedValidator dfb) unspentOutputs tx
---     void $ submitTxConstraints (typedValidator dfb) tx
---         where
---           dfb = DFBContractParams {}
-
-
--- -- | The join game endpoint.
--- join :: AsContractError e => Promise () Schema e ()
--- join =  endpoint @"join" @JoinParams $ \(JoinParams {..}) -> do
---     player <- pubKeyHash <$> Plutus.Contract.ownPubKey
---     if Value.lt amount (Ada.lovelaceValueOf 10) -- Make this like 2 ada in production
---     then logInfo @String $ "Wrong Amount of ADA"
---     else do
---         let gameDatum = CustomDatumType {cdtPlayerPKH = player, cdtValue = amount}
---         logInfo @String $ "DATUM HASH"
---         logInfo @DatumHash $ Ledger.datumHash (Datum (PlutusTx.toBuiltinData gameDatum))
---         let tx = Constraints.mustPayToTheScript gameDatum amount PlutusTx.Prelude.<> Constraints.mustBeSignedBy player PlutusTx.Prelude.<> Constraints.mustIncludeDatum (Datum $ PlutusTx.toBuiltinData gameDatum  )
---         void $ submitTxConstraints (typedValidator dfb) tx
---         logInfo @String $ "Player has joined the game."
---             where dfb = DFBContractParams {}
-
--- endpoints :: AsContractError e => Contract () Schema e ()
--- endpoints = contract
