@@ -59,7 +59,7 @@ FEE=$(${cli} transaction build \
     --tx-in-datum-file data/phase1_datum.json \
     --tx-in-redeemer-file data/phase2_redeemer.json \
     --tx-out="${sc_address_out}" \
-    --tx-out-datum-embed-file data/create_datum.json \
+    --tx-out-datum-embed-file data/phase2_datum.json \
     --metadata-json-file data/one_player_metadata.json \
     --required-signer wallets/seller-wallet/payment.skey \
     --tx-in-script-file ${script_path} \

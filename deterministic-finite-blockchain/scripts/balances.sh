@@ -20,3 +20,6 @@ ${cli} query utxo --address ${SELLER_ADDRESS} --testnet-magic 1097911063
 echo
 echo "Player 2 Address:" $BUYER_ADDRESS
 ${cli} query utxo --address ${BUYER_ADDRESS} --testnet-magic 1097911063
+
+
+$cli query protocol-parameters --testnet-magic 1097911063 --out-file tmp/pp.json

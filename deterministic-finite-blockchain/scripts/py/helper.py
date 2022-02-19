@@ -2,11 +2,20 @@ import hashlib
 
 def hashToNumber(string):
     """
-    >>> hashToNumber("67b176705b46206614219f47a05aee7ae6a3edbe850bbbe214c536b989aea4d2")
-    1317
+    >>> hashToNumber([])
+    0
+    
+    >>> x = getHash("")
+    >>> hashToNumber(x)
+    1181
 
-    >>> hashToNumber(getHash("1"))
-    1317
+    >>> x = getHash("some string")
+    >>> hashToNumber(x)
+    1097
+
+    >>> x = getHash("4c72e63e5a6a66e04411b3151c939518a86895a5fcbdaddeb53d86ef12e4eb64c4fe5a66ff8c1bdd4a88f7b9a171172cef99e769161eb5e8d5c902a38471b8ac")
+    >>> hashToNumber(x)
+    1074
     """
     return reduction(sum_pair_list(string_to_list_in_pairs(string)))
 
@@ -14,26 +23,39 @@ def string_to_list_in_pairs(s):
     """
     >>> string_to_list_in_pairs("abcd")
     ['ab', 'bc', 'cd']
+
+    >>> string_to_list_in_pairs("")
+    []
+
     """
     return [''.join(pair) for pair in zip(s[:-1], s[1:])]
 
 
-def sum_pair_list(s):
+def sum_pair_list(s:list) -> int:
     """
-    >>> x = string_to_list_in_pairs("67b176705b46206614219f47a05aee7ae6a3edbe850bbbe214c536b989aea4d2")
-    >>> sum_pair_list(x)
-    82751641072219950866771297305292165320620762024983914138828800000
+    >>> sum_pair_list(['af'])
+    176
+
+    >>> sum_pair_list([])
+    1
+
+    >>> x = getHash("")
+    >>> y = string_to_list_in_pairs(x)
+    >>> sum_pair_list(y)
+    5945612572284791548098908064394044345263707520646381729396817920000
     """
     total = 1
     c = 0
     for value in s:
         if c % 2 == 0:
-            total *= (int(value, 16) + 1)
+            # print(((b10(value)) + 1))
+            total *= ((b10(value)) + 1)
         c += 1
+    # print(c)
     return total
         
 
-def shuffle(array):
+def shuffle(array: list) -> list:
     """
     Shuffle an array with its own hash.
 
@@ -63,12 +85,10 @@ def reduction(number: int) -> int:
     >>> reduction('132')
     28
 
-    >>> reduction(82751641072219950866771297305292165320620762024983914138828800000)
-    1317
     """
     number = int(number)
     counter = 0
-    while number != 1:
+    while number != 1 and number > 0:
         if number % 2 == 0:
             number = number // 2
         else:
@@ -83,6 +103,9 @@ def pairs(x: list, y:list) -> list:
 
     >>> pairs([1,2,3],['a','b','c'])
     [(1, 'a'), (2, 'b'), (3, 'c')]
+
+    >>> pairs([],[])
+    []
     """
     z = zip(x,y)
     return [(i,j) for i,j in z if i != j]
@@ -113,6 +136,9 @@ def bq(number: int, base: int) -> list:
 
     >>> bq(23, 3)
     [2, 1, 2]
+
+    >>> bq(0, 3)
+    [0]
     """
     if number == 0:
         return [0]
@@ -125,9 +151,7 @@ def bq(number: int, base: int) -> list:
 
 def getHash(ctr: str) -> str:
     """
-    Stringify ctr and sha3 512 hash then hexdigest.
-
-    Force length to 64.
+    Stringify ctr and sha3_256 hash then hexdigest.
 
     >>> getHash("")
     'a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a'
@@ -135,13 +159,15 @@ def getHash(ctr: str) -> str:
     >>> getHash("hello, world")
     'bfb3959527d7a3f2f09def2f6915452d55a8f122df9e164d6f31c7fcf6093e14'
 
-    >>> 
+
+    >>> getHash("4c72e63e5a6a66e04411b3151c939518a86895a5fcbdaddeb53d86ef12e4eb64c4fe5a66ff8c1bdd4a88f7b9a171172cef99e769161eb5e8d5c902a38471b8ac")
+    '008a77ec7a5cdb04c7fa00d76b91e7471d7ab9ac504370caa9a1a027842b19a2'
     """
     m = hashlib.sha3_256()
     string = str(ctr).encode('utf-8')
     m.update(bytes(string))
     ctr_hash = m.hexdigest()
-    return ctr_hash[:48]
+    return ctr_hash
 
 
 if "__main__" == __name__:

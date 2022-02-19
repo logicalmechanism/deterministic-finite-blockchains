@@ -21,15 +21,13 @@ def main():
     halving = 1*mining_rate
     miners = len(bq(b10(getHash(N)), N))+2
     # |400*log(N)/N|
-    print(miners)
     mining_pool = miners*mining_rate*halving*2
-    print(mining_pool)
     # exit()
     # print('The Mining Pool: {}\n'.format(mining_pool))
     
     #
     block_number = 0
-    block_string = "0"
+    block_string = "this is a string for you and me but most for them."
     block_hash = getHash(block_string)
 
 
@@ -120,11 +118,12 @@ def main():
     # This is the validation requirements.
     # "somestring".encode('utf-8').hex() # hex string
     try:
-        print('wallet : {} -> {}'.format((block_hash.encode('utf-8').hex(), wallet_hash.encode('utf-8').hex()), wallet_proof))
-        print('wallet : {} -> {}'.format((block_hash, wallet_hash), wallet_proof))
-        print('low    : {} -> {}'.format(prevLow, low))
-        print('high   : {} -> {}'.format(prevHigh, high))
-        print('last   : {} -> {}'.format(prev, block_hash))
+        # print('wallet : {} -> {}'.format((block_hash.encode('utf-8').hex(), wallet_hash.encode('utf-8').hex()), wallet_proof))
+
+        # print('wallet : {} -> {}'.format((block_hash, wallet_hash), hashToNumber(wallet_proof)))
+        print('low    : {} -> {}'.format(prevLow, hashToNumber(low)))
+        print('high   : {} -> {}'.format(prevHigh, hashToNumber(high)))
+        print('last   : {} -> {}'.format(prev, hashToNumber(block_hash)))
     except TypeError:
         pass
 

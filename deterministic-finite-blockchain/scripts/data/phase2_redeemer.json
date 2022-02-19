@@ -2,26 +2,16 @@
   "constructor": 0,
   "fields": [
     {
-      "int": 40
+      "int": 4
     },
     {
       "bytes": ""
     },
     {
-      "list": [
-        {"bytes":"bff21e432d9b68297ccf2e25fe0f6b16298cc5ec9f228cb8"},
-        {"bytes":"bff21e432d9b68297ccf2e25fe0f6b16298cc5ec9f228cb8"},
-        {"bytes":"bff21e432d9b68297ccf2e25fe0f6b16298cc5ec9f228cb8"},
-        {"bytes":"bff21e432d9b68297ccf2e25fe0f6b16298cc5ec9f228cb8"}
-      ]
+      "bytes":"b10f7703dc279b01a85a4d1c4e889266d17a755a1cfefcab1e7a9316f1599957"
     },
     {
-      "list": [
-        {"bytes":"3cc6d37ec65c6d0643e72b54368a1df0694746ebe144406b"},
-        {"bytes":"3cc6d37ec65c6d0643e72b54368a1df0694746ebe144406b"},
-        {"bytes":"3cc6d37ec65c6d0643e72b54368a1df0694746ebe144406b"},
-        {"bytes":"3cc6d37ec65c6d0643e72b54368a1df0694746ebe144406b"}
-      ]
+      "bytes":"d2564cb01165ec2280efb7183b3810aaa11dfcdbe29ad407c69f3dae17fded01"
     }
   ]
 }

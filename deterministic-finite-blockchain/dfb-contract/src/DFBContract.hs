@@ -35,6 +35,8 @@ module DFBContract
   , checkHashInputs
   , getHashFromString
   , reduction
+  , strToInt
+  , reduceString
   ) where
 import           Cardano.Api.Shelley       (PlutusScript (..), PlutusScriptV1)
 
@@ -54,6 +56,9 @@ import           Plutus.Contract
 import qualified Plutus.V1.Ledger.Scripts  as Plutus
 import qualified Plutus.V1.Ledger.Value    as Value
 import qualified Plutus.V1.Ledger.Ada      as Ada
+
+
+import qualified Prelude as Prelude hiding (($))
 
 
 {- |
@@ -82,7 +87,8 @@ data CustomDatumType = CustomDatumType
   , cdtPlayersPKH    :: ![PubKeyHash]
   , cdtStartPhrase   :: !BuiltinByteString
   , cdtValidateStage :: !Integer
-  , cdtChainValues   :: ![BuiltinByteString]
+  , cdtHighValue     :: !Integer
+  , cdtNextPhrase    :: !BuiltinByteString
   }
     deriving stock (Show, Generic)
     deriving anyclass (FromJSON, ToJSON, ToSchema)
@@ -103,8 +109,8 @@ instance PlutusTx.Prelude.Eq CustomDatumType where
 data CustomRedeemerType = CustomRedeemerType
   { crtAction    :: !Integer
   , crtPlayerPKH :: !PubKeyHash
-  , crtAHashes   :: ![BuiltinByteString]
-  , crtBHashes   :: ![BuiltinByteString]
+  , crtHighA     :: !BuiltinByteString
+  , crtHighB     :: !BuiltinByteString
   }
     deriving stock (Show, Generic)
     deriving anyclass (FromJSON, ToJSON, ToSchema)
@@ -112,38 +118,64 @@ data CustomRedeemerType = CustomRedeemerType
 PlutusTx.unstableMakeIsData ''CustomRedeemerType
 PlutusTx.makeLift ''CustomRedeemerType
 
+
+-------------------------------------------------------------------------------
+-- | Helper Functions
+-------------------------------------------------------------------------------
 -- Integer Equality is messed up here
-checkHashInputs :: [BuiltinByteString] -> [BuiltinByteString] -> [BuiltinByteString] -> Bool
-checkHashInputs [] [] [] = True  -- all are equal
-checkHashInputs [] _  _  = False
-checkHashInputs _  [] _  = False
-checkHashInputs _  _  [] = False
-checkHashInputs [] [] _  = False
-checkHashInputs _  [] [] = False
-checkHashInputs []  _  [] = False
-checkHashInputs (x:xs) (y:ys) (z:zs)
-  -- | getHashFromString (x <> y) == z = checkHashInputs xs ys zs
-  | reduction 5 == 5 = checkHashInputs xs ys zs
-  | otherwise = traceIfFalse "Incorrect Hash Value" False
+checkHashInputs :: BuiltinByteString -> BuiltinByteString -> Integer -> Bool
+checkHashInputs x y z = reduceString (x <> y) == z
+
+-- -- Integer Equality is messed up here
+-- checkHashInputs :: [BuiltinByteString] -> [BuiltinByteString] -> [Integer] -> Bool
+-- checkHashInputs x y z
+--   | x == [] && y == [] && z == [] = True
+--   | x == [] = False
+--   | y == [] = False
+--   | z == [] = False
+--   | reduceString (hx <> hy) == hz = checkHashInputs xs ys zs
+--   | otherwise = False
+--     where
+--       hx = head x
+--       hy = head y
+--       hz = head z
+--       xs = tail x
+--       ys = tail y
+--       zs = tail z
+
 
 -- | Reduce a number with 3n+1 conjecture.
 reduction :: Integer -> Integer
 reduction number = reduction' number 0
   where
     reduction' :: Integer -> Integer -> Integer
-    reduction' 0 _counter = 0
-    reduction' 1 _counter = _counter
-    reduction' number' counter
+    reduction' number' !counter
+      | number' == 0 = 0
+      | number' == 1 = counter
       | modulo number' 2 == 0 = reduction' (divide number' 2) (counter + 1)
       | otherwise = reduction' (3 * number' + 1) (counter + 1)
 
--------------------------------------------------------------------------------
--- | Helper Functions
--------------------------------------------------------------------------------
+-- | Take in a bytestring and convert it to a number
+strToInt :: BuiltinByteString -> Integer
+strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString - 1) 1
+  where
+    hexStringToInteger :: BuiltinByteString -> Integer -> Integer -> Integer
+    hexStringToInteger hex_string counter value'
+      | counter > 0 = hexStringToInteger hex_string (counter - 1) (value' * (indexByteString hex_string counter + 1))
+      | otherwise = value' * (indexByteString hex_string 0 + 1)
+
+reduceString :: BuiltinByteString -> Integer
+reduceString bigString = reduction $ strToInt $ getHashFromString bigString
 
 -- | Take in a ByteString and return a SHA3_256 hash.
 getHashFromString :: BuiltinByteString -> BuiltinByteString
-getHashFromString bbString = takeByteString 16 $ sha3_256 bbString
+getHashFromString = sha3_256
+
+listLength :: [a] -> Integer
+listLength arr = countHowManyElements arr 0
+  where
+    countHowManyElements [] counter = counter
+    countHowManyElements (_:xs) counter = countHowManyElements xs (counter + 1)
 
 -------------------------------------------------------------------------------
 -- | mkValidator :: Data -> Datum -> Redeemer -> ScriptContext -> Bool
@@ -173,7 +205,7 @@ mkValidator _ datum redeemer context
       -------------------------------------------------------------------------
       -- | Different Types of Validators Here
       -------------------------------------------------------------------------
-
+      -- minimumSubset = 2 :: Integer
       -- | A player can join the game.
       joinDFB :: Bool
       joinDFB = do
@@ -219,38 +251,38 @@ mkValidator _ datum redeemer context
         { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (0 :: Integer)
         ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum + 1 == cdtValidateStage newDatum
         ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues newDatum) == 4
-        ; let e = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
+        -- ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues newDatum) == minimumSubset
+        ; let e = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
         ; let f = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
         ; let g = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let h = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
+        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,e,f,g,h]
         }
-      
+
       phaseTwoValidation :: Bool
       phaseTwoValidation = do
         { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
         ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum - 1 == cdtValidateStage newDatum
         ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
-        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == head (reverse $ cdtChainValues datum)
+        ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
+        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtNextPhrase datum
         ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ; let h = traceIfFalse "Hashing Has Failed"        $ checkHashInputs (crtAHashes redeemer) (crtBHashes redeemer) (cdtChainValues datum)
+        ; let h = traceIfFalse "Hashing Values Has Failed" $ checkHashInputs (crtHighA redeemer) (crtHighB redeemer) (cdtHighValue datum)
         ;         traceIfFalse "Phase 2 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
         }
-      
+
       phaseThreeValidation :: Bool
       phaseThreeValidation = do
         { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
         ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum == cdtValidateStage newDatum
         ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues datum) == 4
+        -- ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues datum) == minimumSubset
         ; let e = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
         ; let f = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
         ; let g = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let h = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
+        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,e,f,g,h]
         }
 
       -------------------------------------------------------------------------
@@ -356,30 +388,7 @@ mkValidator _ datum redeemer context
                   then loopInputs [] counter
                   else loopInputs xs (counter + 1)
 
-      -- -- Integer Equality is messed up here
-      -- checkHashInputs :: [BuiltinByteString] -> [BuiltinByteString] -> [BuiltinByteString] -> Bool
-      -- checkHashInputs [] [] [] = True  -- all are equal
-      -- checkHashInputs [] _  _  = False
-      -- checkHashInputs _  [] _  = False
-      -- checkHashInputs _  _  [] = False
-      -- checkHashInputs (x:xs) (y:ys) (z:zs)
-      --   | getHashFromString (x <> y) == z = checkHashInputs xs ys zs
-      --   | otherwise = traceIfFalse "Incorrect Hash Value" False
 
-
-      -- -------------------------------------------------------------------------------
-      -- -- | Helper Functions
-      -- -------------------------------------------------------------------------------
-
-      -- -- | Take in a ByteString and return a SHA3_256 hash.
-      -- getHashFromString :: BuiltinByteString -> BuiltinByteString
-      -- getHashFromString bbString = takeByteString 16 $ sha3_256 bbString
-
-      listLength :: [a] -> Integer
-      listLength arr = countHowManyElements arr 0
-        where
-          countHowManyElements [] counter = counter
-          countHowManyElements (_:xs) counter = countHowManyElements xs (counter + 1)
 
 
 
