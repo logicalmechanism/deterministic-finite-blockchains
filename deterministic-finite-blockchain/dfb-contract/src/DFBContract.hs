@@ -33,7 +33,6 @@ module DFBContract
   , CustomDatumType
   , contract
   , checkHashInputs
-  , getHashFromString
   , reduction
   , strToInt
   , reduceString
@@ -58,7 +57,7 @@ import qualified Plutus.V1.Ledger.Value    as Value
 import qualified Plutus.V1.Ledger.Ada      as Ada
 
 
-import qualified Prelude as Prelude hiding (($))
+import qualified Prelude hiding (($))
 
 
 {- |
@@ -155,7 +154,7 @@ reduction number = reduction' number 0
       | modulo number' 2 == 0 = reduction' (divide number' 2) (counter + 1)
       | otherwise = reduction' (3 * number' + 1) (counter + 1)
 
--- | Take in a bytestring and convert it to a number
+-- -- | Take in a bytestring and convert it to a number
 strToInt :: BuiltinByteString -> Integer
 strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString - 1) 1
   where
@@ -165,11 +164,7 @@ strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString 
       | otherwise = value' * (indexByteString hex_string 0 + 1)
 
 reduceString :: BuiltinByteString -> Integer
-reduceString bigString = reduction $ strToInt $ getHashFromString bigString
-
--- | Take in a ByteString and return a SHA3_256 hash.
-getHashFromString :: BuiltinByteString -> BuiltinByteString
-getHashFromString = sha3_256
+reduceString bigString = reduction $ strToInt $ sha3_256 bigString
 
 listLength :: [a] -> Integer
 listLength arr = countHowManyElements arr 0
@@ -205,7 +200,6 @@ mkValidator _ datum redeemer context
       -------------------------------------------------------------------------
       -- | Different Types of Validators Here
       -------------------------------------------------------------------------
-      -- minimumSubset = 2 :: Integer
       -- | A player can join the game.
       joinDFB :: Bool
       joinDFB = do
@@ -251,12 +245,11 @@ mkValidator _ datum redeemer context
         { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (0 :: Integer)
         ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum + 1 == cdtValidateStage newDatum
         ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        -- ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues newDatum) == minimumSubset
-        ; let e = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
-        ; let f = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let g = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
-        ; let h = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,e,f,g,h]
+        ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
+        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
+        ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
+        ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
+        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
         }
 
       phaseTwoValidation :: Bool
@@ -277,12 +270,11 @@ mkValidator _ datum redeemer context
         { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
         ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum == cdtValidateStage newDatum
         ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        -- ; let d = traceIfFalse "Incorret Chain Data"       $ listLength (cdtChainValues datum) == minimumSubset
-        ; let e = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
-        ; let f = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let g = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
-        ; let h = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,e,f,g,h]
+        ; let d = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
+        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
+        ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
+        ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
+        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
         }
 
       -------------------------------------------------------------------------
