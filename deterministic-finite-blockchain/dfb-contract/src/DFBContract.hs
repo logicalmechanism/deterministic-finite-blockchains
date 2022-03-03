@@ -86,7 +86,7 @@ data CustomDatumType = CustomDatumType
   , cdtPlayersPKH    :: ![PubKeyHash]
   , cdtStartPhrase   :: !BuiltinByteString
   , cdtValidateStage :: !Integer
-  , cdtHighValue     :: !Integer
+  , cdtHighValue     :: ![Integer]
   , cdtNextPhrase    :: !BuiltinByteString
   }
     deriving stock (Show, Generic)
@@ -108,8 +108,8 @@ instance PlutusTx.Prelude.Eq CustomDatumType where
 data CustomRedeemerType = CustomRedeemerType
   { crtAction    :: !Integer
   , crtPlayerPKH :: !PubKeyHash
-  , crtHighA     :: !BuiltinByteString
-  , crtHighB     :: !BuiltinByteString
+  , crtHighA     :: ![BuiltinByteString]
+  , crtHighB     :: ![BuiltinByteString]
   }
     deriving stock (Show, Generic)
     deriving anyclass (FromJSON, ToJSON, ToSchema)
@@ -122,25 +122,25 @@ PlutusTx.makeLift ''CustomRedeemerType
 -- | Helper Functions
 -------------------------------------------------------------------------------
 -- Integer Equality is messed up here
-checkHashInputs :: BuiltinByteString -> BuiltinByteString -> Integer -> Bool
-checkHashInputs x y z = reduceString (x <> y) == z
+-- checkHashInputs :: BuiltinByteString -> BuiltinByteString -> Integer -> Bool
+-- checkHashInputs x y z = reduceString (x <> y) == z
 
--- -- Integer Equality is messed up here
--- checkHashInputs :: [BuiltinByteString] -> [BuiltinByteString] -> [Integer] -> Bool
--- checkHashInputs x y z
---   | x == [] && y == [] && z == [] = True
---   | x == [] = False
---   | y == [] = False
---   | z == [] = False
---   | reduceString (hx <> hy) == hz = checkHashInputs xs ys zs
---   | otherwise = False
---     where
---       hx = head x
---       hy = head y
---       hz = head z
---       xs = tail x
---       ys = tail y
---       zs = tail z
+-- Integer Equality is messed up here
+checkHashInputs :: [BuiltinByteString] -> [BuiltinByteString] -> [Integer] -> Bool
+checkHashInputs x y z
+  | x == [] && y == [] && z == [] = True
+  | x == [] = traceIfFalse "empty x" False
+  | y == [] = traceIfFalse "empty y" False
+  | z == [] = traceIfFalse "empty z" False
+  | traceIfFalse "reducestring fail" $ reduceString (hx <> hy) == hz = checkHashInputs xs ys zs
+  | otherwise = False
+    where
+      hx = head x
+      hy = head y
+      hz = head z
+      xs = tail x
+      ys = tail y
+      zs = tail z
 
 
 -- | Reduce a number with 3n+1 conjecture.
@@ -156,7 +156,8 @@ reduction number = reduction' number 0
 
 -- -- | Take in a bytestring and convert it to a number
 strToInt :: BuiltinByteString -> Integer
-strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString - 1) 1
+-- strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString - 1) 1
+strToInt hexString = hexStringToInteger hexString 6 1 -- force length
   where
     hexStringToInteger :: BuiltinByteString -> Integer -> Integer -> Integer
     hexStringToInteger hex_string counter value'
@@ -164,7 +165,8 @@ strToInt hexString = hexStringToInteger hexString (lengthOfByteString hexString 
       | otherwise = value' * (indexByteString hex_string 0 + 1)
 
 reduceString :: BuiltinByteString -> Integer
-reduceString bigString = reduction $ strToInt $ sha3_256 bigString
+-- reduceString bigString = reduction $ strToInt $ sha3_256 bigString
+reduceString bigString = strToInt $ sha3_256 bigString
 
 listLength :: [a] -> Integer
 listLength arr = countHowManyElements arr 0
@@ -185,12 +187,13 @@ mkValidator _ datum redeemer context
       -- Either use an integer or use different constructors. What is best?
       checkActionFlag :: Bool
       checkActionFlag
-        | actionFlag == 0 = joinDFB
-        | actionFlag == 1 = leaveDFB
-        | actionFlag == 2 = removeDFB
-        | actionFlag == 3 = phaseOneValidation
-        | actionFlag == 4 = phaseTwoValidation
-        | actionFlag == 5 = phaseThreeValidation
+        | actionFlag == 0 = validateCheck
+        -- | actionFlag == 0 = joinDFB
+        -- | actionFlag == 1 = leaveDFB
+        -- | actionFlag == 2 = removeDFB
+        -- | actionFlag == 3 = phaseOneValidation
+        -- | actionFlag == 4 = phaseTwoValidation
+        -- | actionFlag == 5 = phaseThreeValidation
         | otherwise       = traceIfFalse "Incorrect Action Flag" True -- This can be used as a bypass
           where
             actionFlag :: Integer
@@ -200,185 +203,191 @@ mkValidator _ datum redeemer context
       -------------------------------------------------------------------------
       -- | Different Types of Validators Here
       -------------------------------------------------------------------------
-      -- | A player can join the game.
-      joinDFB :: Bool
-      joinDFB = do
-        { let a = traceIfFalse "UTxO Must Go To Script"     $ checkContTxOutForValue scriptTxOutputs adjustValueUp
-        ; let b = traceIfFalse "Incorrect Datum Values"     $ newDatum == datum
-        ; let c = traceIfFalse "Spending Multiple UTxOs"    checkForSingleScriptInput
-        ; let d = traceIfFalse "Too Many Players"           $ listLength (cdtPlayersPKH newDatum) <= cdtPlayers datum
-        ; let e = traceIfFalse "Incorrect Start Phrase"     $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let f = traceIfFalse "A player is missing"        $ reverse (tail $ reverse $ cdtPlayersPKH  newDatum) == cdtPlayersPKH datum
-        ; let g = traceIfFalse "DFB is being validated"     $ cdtValidateStage datum == (0 :: Integer)
-        ; let h = traceIfFalse "Incorrect Validation Stage" $ cdtValidateStage newDatum == cdtValidateStage datum
-        ; let i = traceIfFalse "Incorrect Signer"           $ checkTxSigner $ head $ reverse $ cdtPlayersPKH newDatum
-        ;         traceIfFalse "Join Endpoint Failure"      $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i]
+      validateCheck :: Bool
+      validateCheck = do
+        { let a = traceIfFalse "Hash Inputs Failed" $ checkHashInputs (crtHighA redeemer) (crtHighB redeemer) (cdtHighValue datum)
+        ; traceIfFalse "Validate Endpoint Failure"      $ all (==(True :: Bool)) [a]
         }
 
-      -- | A player leaves the game.
-      leaveDFB :: Bool
-      leaveDFB = do
-        { let a = traceIfFalse "Incorrect Signer"            $ checkTxSigner playerPKH
-        ; let b = traceIfFalse "Incorrect Datum Values"      $ newDatum == datum
-        ; let c = traceIfFalse "UTxO Must go to script"      $ checkContTxOutForValue scriptTxOutputs adjustValueDown
-        ; let d = traceIfFalse "Incorret Player Data"        $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum) - 1
-        ; let e = traceIfFalse "Incorrect Start Phrase"      $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let f = traceIfFalse "Value is not being returned" $ checkTxOutForValueAtPKH currentTxOutputs playerPKH (Ada.lovelaceValueOf minimumAda)
-        ; let g = traceIfFalse "DFB is being validated"      $ cdtValidateStage datum == (0 :: Integer)
-        ; let h = traceIfFalse "Must be a player"            checkIfPlayer
-        ; let i = traceIfFalse "Incorrect Validation Stage"  $ cdtValidateStage newDatum == cdtValidateStage datum
-        ; let j = traceIfFalse "Spending Multiple UTxOs"     checkForSingleScriptInput
-        ;         traceIfFalse "Leave Endpoint Failure"      $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i,j]
-        }
+      -- -- | A player can join the game.
+      -- joinDFB :: Bool
+      -- joinDFB = do
+      --   { let a = traceIfFalse "UTxO Must Go To Script"     $ checkContTxOutForValue scriptTxOutputs adjustValueUp
+      --   ; let b = traceIfFalse "Incorrect Datum Values"     $ newDatum == datum
+      --   ; let c = traceIfFalse "Spending Multiple UTxOs"    checkForSingleScriptInput
+      --   ; let d = traceIfFalse "Too Many Players"           $ listLength (cdtPlayersPKH newDatum) <= cdtPlayers datum
+      --   ; let e = traceIfFalse "Incorrect Start Phrase"     $ cdtStartPhrase newDatum == cdtStartPhrase datum
+      --   ; let f = traceIfFalse "A player is missing"        $ reverse (tail $ reverse $ cdtPlayersPKH  newDatum) == cdtPlayersPKH datum
+      --   ; let g = traceIfFalse "DFB is being validated"     $ cdtValidateStage datum == (0 :: Integer)
+      --   ; let h = traceIfFalse "Incorrect Validation Stage" $ cdtValidateStage newDatum == cdtValidateStage datum
+      --   ; let i = traceIfFalse "Incorrect Signer"           $ checkTxSigner $ head $ reverse $ cdtPlayersPKH newDatum
+      --   ;         traceIfFalse "Join Endpoint Failure"      $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i]
+      --   }
 
-      removeDFB :: Bool
-      removeDFB = do
-        { let a = traceIfFalse "Incorrect Signer"            $ checkTxSigner creatorPKH
-        ; let b = traceIfFalse "Value is not being returned" $ checkTxOutForValueAtPKH currentTxOutputs creatorPKH validatedValue
-        ; let c = traceIfFalse "Spending Multiple UTxOs"     checkForSingleScriptInput
-        ; let d = traceIfFalse "Incorret Player Data"        $ listLength (cdtPlayersPKH datum) == 0
-        ;         traceIfFalse "Remove Endpoint Failure"     $ all (==(True :: Bool)) [a,b,c,d]
-        }
+      -- -- | A player leaves the game.
+      -- leaveDFB :: Bool
+      -- leaveDFB = do
+      --   { let a = traceIfFalse "Incorrect Signer"            $ checkTxSigner playerPKH
+      --   ; let b = traceIfFalse "Incorrect Datum Values"      $ newDatum == datum
+      --   ; let c = traceIfFalse "UTxO Must go to script"      $ checkContTxOutForValue scriptTxOutputs adjustValueDown
+      --   ; let d = traceIfFalse "Incorret Player Data"        $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum) - 1
+      --   ; let e = traceIfFalse "Incorrect Start Phrase"      $ cdtStartPhrase newDatum == cdtStartPhrase datum
+      --   ; let f = traceIfFalse "Value is not being returned" $ checkTxOutForValueAtPKH currentTxOutputs playerPKH (Ada.lovelaceValueOf minimumAda)
+      --   ; let g = traceIfFalse "DFB is being validated"      $ cdtValidateStage datum == (0 :: Integer)
+      --   ; let h = traceIfFalse "Must be a player"            checkIfPlayer
+      --   ; let i = traceIfFalse "Incorrect Validation Stage"  $ cdtValidateStage newDatum == cdtValidateStage datum
+      --   ; let j = traceIfFalse "Spending Multiple UTxOs"     checkForSingleScriptInput
+      --   ;         traceIfFalse "Leave Endpoint Failure"      $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i,j]
+      --   }
 
-      phaseOneValidation :: Bool
-      phaseOneValidation = do
-        { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (0 :: Integer)
-        ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum + 1 == cdtValidateStage newDatum
-        ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
-        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
-        ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
-        }
+      -- removeDFB :: Bool
+      -- removeDFB = do
+      --   { let a = traceIfFalse "Incorrect Signer"            $ checkTxSigner creatorPKH
+      --   ; let b = traceIfFalse "Value is not being returned" $ checkTxOutForValueAtPKH currentTxOutputs creatorPKH validatedValue
+      --   ; let c = traceIfFalse "Spending Multiple UTxOs"     checkForSingleScriptInput
+      --   ; let d = traceIfFalse "Incorret Player Data"        $ listLength (cdtPlayersPKH datum) == 0
+      --   ;         traceIfFalse "Remove Endpoint Failure"     $ all (==(True :: Bool)) [a,b,c,d]
+      --   }
 
-      phaseTwoValidation :: Bool
-      phaseTwoValidation = do
-        { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
-        ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum - 1 == cdtValidateStage newDatum
-        ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
-        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtNextPhrase datum
-        ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
-        ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ; let h = traceIfFalse "Hashing Values Has Failed" $ checkHashInputs (crtHighA redeemer) (crtHighB redeemer) (cdtHighValue datum)
-        ;         traceIfFalse "Phase 2 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
-        }
+      -- phaseOneValidation :: Bool
+      -- phaseOneValidation = do
+      --   { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (0 :: Integer)
+      --   ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum + 1 == cdtValidateStage newDatum
+      --   ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
+      --   ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
+      --   ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
+      --   ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
+      --   ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
+      --   ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
+      --   }
 
-      phaseThreeValidation :: Bool
-      phaseThreeValidation = do
-        { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
-        ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum == cdtValidateStage newDatum
-        ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
-        ; let d = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
-        ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
-        ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
-        ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
-        }
+      -- phaseTwoValidation :: Bool
+      -- phaseTwoValidation = do
+      --   { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
+      --   ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum - 1 == cdtValidateStage newDatum
+      --   ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
+      --   ; let d = traceIfFalse "Incorret Player Data"      $ cdtPlayersPKH newDatum == cdtPlayersPKH datum
+      --   ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtNextPhrase datum
+      --   ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
+      --   ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
+      --   ; let h = traceIfFalse "Hashing Values Has Failed" True -- $ checkHashInputs (crtHighA redeemer) (crtHighB redeemer) (cdtHighValue datum)
+      --   ;         traceIfFalse "Phase 2 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
+      --   }
+
+      -- phaseThreeValidation :: Bool
+      -- phaseThreeValidation = do
+      --   { let a = traceIfFalse "DFB is being validated"    $ cdtValidateStage datum == (1 :: Integer)
+      --   ; let b = traceIfFalse "Not Advancing Stages"      $ cdtValidateStage datum == cdtValidateStage newDatum
+      --   ; let c = traceIfFalse "Incorrect Datum Values"    $ newDatum == datum
+      --   ; let d = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH newDatum) == listLength (cdtPlayersPKH datum)
+      --   ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
+      --   ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
+      --   ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
+      --   ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
+      --   }
 
       -------------------------------------------------------------------------
 
-      info :: TxInfo
-      info = scriptContextTxInfo context
+      -- info :: TxInfo
+      -- info = scriptContextTxInfo context
 
-      -- All the outputs going back to the script.
-      scriptTxOutputs  :: [TxOut]
-      scriptTxOutputs  = getContinuingOutputs context
+      -- -- All the outputs going back to the script.
+      -- scriptTxOutputs  :: [TxOut]
+      -- scriptTxOutputs  = getContinuingOutputs context
 
-      currentTxOutputs :: [TxOut]
-      currentTxOutputs = txInfoOutputs info
+      -- currentTxOutputs :: [TxOut]
+      -- currentTxOutputs = txInfoOutputs info
 
-      -------------------------------------------------------------------------
+      -- -------------------------------------------------------------------------
 
-      newDatum :: CustomDatumType
-      newDatum = embeddedDatum scriptTxOutputs
+      -- newDatum :: CustomDatumType
+      -- newDatum = embeddedDatum scriptTxOutputs
 
-      -------------------------------------------------------------------------
+      -- -------------------------------------------------------------------------
 
-      creatorPKH :: PubKeyHash
-      creatorPKH = cdtCreatorPKH datum
+      -- creatorPKH :: PubKeyHash
+      -- creatorPKH = cdtCreatorPKH datum
 
 
-      playerPKH :: PubKeyHash
-      playerPKH = crtPlayerPKH redeemer
+      -- playerPKH :: PubKeyHash
+      -- playerPKH = crtPlayerPKH redeemer
 
-      -------------------------------------------------------------------------
-      -- values
-      minimumAda :: Integer
-      minimumAda = 5000000
+      -- -------------------------------------------------------------------------
+      -- -- values
+      -- minimumAda :: Integer
+      -- minimumAda = 5000000
 
-      validatedValue :: Value
-      validatedValue = case findOwnInput context of
-          Nothing    -> traceError "No Input to Validate"
-          Just input -> txOutValue $ txInInfoResolved input
+      -- validatedValue :: Value
+      -- validatedValue = case findOwnInput context of
+      --     Nothing    -> traceError "No Input to Validate"
+      --     Just input -> txOutValue $ txInInfoResolved input
 
-      adjustValueDown :: Value
-      adjustValueDown = Ada.lovelaceValueOf (Value.valueOf validatedValue Ada.adaSymbol Ada.adaToken - minimumAda)
+      -- adjustValueDown :: Value
+      -- adjustValueDown = Ada.lovelaceValueOf (Value.valueOf validatedValue Ada.adaSymbol Ada.adaToken - minimumAda)
 
-      adjustValueUp :: Value
-      adjustValueUp = Ada.lovelaceValueOf (Value.valueOf validatedValue Ada.adaSymbol Ada.adaToken + minimumAda)
-      -------------------------------------------------------------------------
+      -- adjustValueUp :: Value
+      -- adjustValueUp = Ada.lovelaceValueOf (Value.valueOf validatedValue Ada.adaSymbol Ada.adaToken + minimumAda)
+      -- -------------------------------------------------------------------------
 
-      checkIfPlayer :: Bool
-      checkIfPlayer = searchPlayers (cdtPlayersPKH datum) playerPKH
-        where
-          searchPlayers :: [PubKeyHash] -> PubKeyHash -> Bool
-          searchPlayers [] _ = False
-          searchPlayers (x:xs) pkh'
-            | x == pkh' = True
-            | otherwise = searchPlayers xs pkh'
+      -- checkIfPlayer :: Bool
+      -- checkIfPlayer = searchPlayers (cdtPlayersPKH datum) playerPKH
+      --   where
+      --     searchPlayers :: [PubKeyHash] -> PubKeyHash -> Bool
+      --     searchPlayers [] _ = False
+      --     searchPlayers (x:xs) pkh'
+      --       | x == pkh' = True
+      --       | otherwise = searchPlayers xs pkh'
 
-      checkTxSigner :: PubKeyHash -> Bool
-      checkTxSigner signee = txSignedBy info signee
+      -- checkTxSigner :: PubKeyHash -> Bool
+      -- checkTxSigner signee = txSignedBy info signee
 
-      -- Check for embedded datum in the txout
-      embeddedDatum :: [TxOut] -> CustomDatumType
-      embeddedDatum [] = datum
-      embeddedDatum (x:xs) = case txOutDatumHash x of
-        Nothing -> embeddedDatum xs
-        Just dh -> case findDatum dh info of
-          Nothing         -> datum
-          Just (Datum d)  -> Data.Maybe.fromMaybe datum (PlutusTx.fromBuiltinData d)
+      -- -- Check for embedded datum in the txout
+      -- embeddedDatum :: [TxOut] -> CustomDatumType
+      -- embeddedDatum [] = datum
+      -- embeddedDatum (x:xs) = case txOutDatumHash x of
+      --   Nothing -> embeddedDatum xs
+      --   Just dh -> case findDatum dh info of
+      --     Nothing         -> datum
+      --     Just (Datum d)  -> Data.Maybe.fromMaybe datum (PlutusTx.fromBuiltinData d)
 
-      -- | Search each TxOut for the value.
-      checkContTxOutForValue :: [TxOut] -> Value -> Bool
-      checkContTxOutForValue [] _val = False
-      checkContTxOutForValue (x:xs) val
-        | checkVal  = True
-        | otherwise = checkContTxOutForValue xs val
-        where
-          checkVal :: Bool
-          checkVal = Value.geq (txOutValue x) val
+      -- -- | Search each TxOut for the value.
+      -- checkContTxOutForValue :: [TxOut] -> Value -> Bool
+      -- checkContTxOutForValue [] _val = False
+      -- checkContTxOutForValue (x:xs) val
+      --   | checkVal  = True
+      --   | otherwise = checkContTxOutForValue xs val
+      --   where
+      --     checkVal :: Bool
+      --     checkVal = Value.geq (txOutValue x) val
 
-      -- Search each TxOut for the correct address and value.
-      checkTxOutForValueAtPKH :: [TxOut] -> PubKeyHash -> Value -> Bool
-      checkTxOutForValueAtPKH [] _pkh _val = False
-      checkTxOutForValueAtPKH (x:xs) pkh val
-        | checkAddr && checkVal = True
-        | otherwise             = checkTxOutForValueAtPKH xs pkh val
-        where
-          checkAddr :: Bool
-          checkAddr = txOutAddress x == pubKeyHashAddress pkh
+      -- -- Search each TxOut for the correct address and value.
+      -- checkTxOutForValueAtPKH :: [TxOut] -> PubKeyHash -> Value -> Bool
+      -- checkTxOutForValueAtPKH [] _pkh _val = False
+      -- checkTxOutForValueAtPKH (x:xs) pkh val
+      --   | checkAddr && checkVal = True
+      --   | otherwise             = checkTxOutForValueAtPKH xs pkh val
+      --   where
+      --     checkAddr :: Bool
+      --     checkAddr = txOutAddress x == pubKeyHashAddress pkh
 
-          checkVal :: Bool
-          checkVal = txOutValue x == val
+      --     checkVal :: Bool
+      --     checkVal = txOutValue x == val
 
-      -- Force a single script utxo input.
-      checkForSingleScriptInput :: Bool
-      checkForSingleScriptInput = loopInputs (txInfoInputs info) 0
-        where
-          loopInputs :: [TxInInfo] -> Integer -> Bool
-          loopInputs []     counter = counter == 1
-          loopInputs (x:xs) counter = case txOutDatumHash $ txInInfoResolved x of
-              Nothing -> do
-                if counter > 1
-                  then loopInputs [] counter
-                  else loopInputs xs counter
-              Just _  -> do
-                if counter > 1
-                  then loopInputs [] counter
-                  else loopInputs xs (counter + 1)
+      -- -- Force a single script utxo input.
+      -- checkForSingleScriptInput :: Bool
+      -- checkForSingleScriptInput = loopInputs (txInfoInputs info) 0
+      --   where
+      --     loopInputs :: [TxInInfo] -> Integer -> Bool
+      --     loopInputs []     counter = counter == 1
+      --     loopInputs (x:xs) counter = case txOutDatumHash $ txInInfoResolved x of
+      --         Nothing -> do
+      --           if counter > 1
+      --             then loopInputs [] counter
+      --             else loopInputs xs counter
+      --         Just _  -> do
+      --           if counter > 1
+      --             then loopInputs [] counter
+      --             else loopInputs xs (counter + 1)
 
 
 

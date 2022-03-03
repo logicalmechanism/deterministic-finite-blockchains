@@ -1,0 +1,31 @@
+{
+  "constructor": 0,
+  "fields": [
+    {
+      "int": 0
+    },
+    {
+      "bytes": ""
+    },
+    {
+      "list": [
+        {
+          "bytes": ""
+        },
+        {
+          "bytes": "61620a"
+        }
+      ]
+    },
+    {
+      "list": [
+        {
+          "bytes": ""
+        },
+        {
+          "bytes": "61620a"
+        }
+      ]
+    }
+  ]
+}
