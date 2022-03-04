@@ -1,19 +1,13 @@
 # Deterministic Finite Blockchains
 
 ```
-This code is a plutus implementation for the DFB based off a python prototype.
+This code is a plutus implementation for deterministic finite blockchains.
 ```
 
 Please refer to the [Deterministic Finite Blockchain GitBook](https://ancientkraken.gitbook.io/deterministic-finite-blockchains/) for more information.
 
-## Cloning from GitHub
-When cloning the repo be sure to use the recursive submodule parameter with git clone to get all the required contract files.
 
-```
-git clone --recurse-submodules https://github.com/logicalmechanism/deterministic-finite-blockchains
-```
-
-# The code requirements
+## The code requirements
 
 ```
 cardano-cli version
