@@ -62,7 +62,6 @@ import qualified Prelude hiding (($))
   Author   : The Ancient Kraken
   Copyright: 2021
   Version  : Rev 0
-
 -}
 
 -------------------------------------------------------------------------------

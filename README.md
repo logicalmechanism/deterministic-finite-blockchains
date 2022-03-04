@@ -6,7 +6,6 @@ This code is a plutus implementation for deterministic finite blockchains.
 
 Please refer to the [Deterministic Finite Blockchain GitBook](https://ancientkraken.gitbook.io/deterministic-finite-blockchains/) for more information.
 
-
 ## The code requirements
 
 ```
@@ -24,4 +23,11 @@ cabal --version
 
 ghc --version
 # The Glorious Glasgow Haskell Compilation System, version 8.10.4
+
+python --version
+# Python 3.9.5
+
+bash --version
+# GNU bash, version 5.0.17(1)-release (x86_64-pc-linux-gnu)
 ```
+
