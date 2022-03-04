@@ -237,7 +237,9 @@ mkValidator _ datum redeemer context
         ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
         ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
+        ; let h = traceIfFalse "Incorret Player Data"      $ listLength (cdtPlayersPKH datum) /= (0 :: Integer)
+        ; let i = traceIfFalse "Incorrect Player Signer"   $ checkIfPlayerSigned (cdtPlayersPKH datum)
+        ;         traceIfFalse "Phase 1 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i]
         }
 
       phaseTwoValidation :: Bool
@@ -250,7 +252,8 @@ mkValidator _ datum redeemer context
         ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
         ; let h = traceIfFalse "Hashing Values Has Failed" $ checkHashInputs (crtHighA redeemer) (crtHighB redeemer) (cdtHighValue datum)
-        ;         traceIfFalse "Phase 2 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
+        ; let i = traceIfFalse "Incorrect Player Signer"   $ checkIfPlayerSigned (cdtPlayersPKH datum)
+        ;         traceIfFalse "Phase 2 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h,i]
         }
 
       phaseThreeValidation :: Bool
@@ -262,7 +265,8 @@ mkValidator _ datum redeemer context
         ; let e = traceIfFalse "Incorrect Start Phrase"    $ cdtStartPhrase newDatum == cdtStartPhrase datum
         ; let f = traceIfFalse "Spending Multiple UTxOs"   checkForSingleScriptInput
         ; let g = traceIfFalse "UTxO Must go to script"    $ checkContTxOutForValue scriptTxOutputs validatedValue
-        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g]
+        ; let h = traceIfFalse "Incorrect Player Signer"   $ checkIfPlayerSigned (cdtPlayersPKH datum)
+        ;         traceIfFalse "Phase 3 Endpoint Failure"  $ all (==(True :: Bool)) [a,b,c,d,e,f,g,h]
         }
 
       -----------------------------------------------------------------------
@@ -319,6 +323,12 @@ mkValidator _ datum redeemer context
 
       checkTxSigner :: PubKeyHash -> Bool
       checkTxSigner signee = txSignedBy info signee
+
+      checkIfPlayerSigned :: [PubKeyHash] -> Bool
+      checkIfPlayerSigned [] = False
+      checkIfPlayerSigned (pkh:pkhs)
+        | checkTxSigner pkh = True 
+        | otherwise = checkIfPlayerSigned pkhs
 
       -- Check for embedded datum in the txout
       embeddedDatum :: [TxOut] -> CustomDatumType
