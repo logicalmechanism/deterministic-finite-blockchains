@@ -3,21 +3,22 @@ import hashlib
 def hashToNumber(string):
     """
     >>> hashToNumber([])
-    0
+    1
     
     >>> x = getHash("")
     >>> hashToNumber(x)
-    1181
+    2739796737785856
 
     >>> x = getHash("some string")
     >>> hashToNumber(x)
-    1097
+    1594568333280
 
     >>> x = getHash("4c72e63e5a6a66e04411b3151c939518a86895a5fcbdaddeb53d86ef12e4eb64c4fe5a66ff8c1bdd4a88f7b9a171172cef99e769161eb5e8d5c902a38471b8ac")
     >>> hashToNumber(x)
-    1074
+    9948443392800
     """
-    return reduction(sum_pair_list(string_to_list_in_pairs(string)))
+    # return reduction(sum_pair_list(string_to_list_in_pairs(string)))
+    return sum_pair_list(string_to_list_in_pairs(string)[:14])
 
 def string_to_list_in_pairs(s):
     """

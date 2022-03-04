@@ -12,23 +12,22 @@ def main():
     TEST
     """
     N = 6
-    # print('Players: {}\n'.format(N))
+    print('Players: {}\n'.format(N))
     tokens = 5 # 4 + 1 synthetic
-    # print('Tokens: {}\n'.format(tokens-1))
+    print('Tokens: {}\n'.format(tokens-1))
 
     # Mining pool
     mining_rate = 100
     halving = 1*mining_rate
     miners = len(bq(b10(getHash(N)), N))+2
-    # |400*log(N)/N|
     mining_pool = miners*mining_rate*halving*2
-    # exit()
-    # print('The Mining Pool: {}\n'.format(mining_pool))
+    print('The Mining Pool: {}\n'.format(mining_pool))
     
     #
     block_number = 0
     block_string = "this is a string for you and me but most for them."
     block_hash = getHash(block_string)
+    print('\nThe starting block hash: {}'.format(block_hash))
 
 
     # Create the DFB Wallets From real world values.
@@ -39,7 +38,8 @@ def main():
     wallets[2][3]=56134
     wallets[3][4]=3134
 
-    # pprint.pprint(wallets)
+    print("\nstarting wallets")
+    pprint.pprint(wallets)
     wallet_hash = getHash(str(wallets))
 
     # for finding low and high of dfb
@@ -101,12 +101,11 @@ def main():
             block_string = block_hash + wallet_hash
             block_hash = getHash(block_string)
 
-    # print('The final block number is {}'.format(block_number)) #
     # This will become the new starting phrase for the next dfb.
-    print('The final block hash: {}'.format(block_hash))
-    print()
+    print('\nThe final block hash: {}'.format(block_hash))
 
     # This gets stored in the metadata
+    print("\nending wallets")
     toData = stringify(wallets)
     pprint.pprint(toData)
 
@@ -116,11 +115,7 @@ def main():
     print()
 
     # This is the validation requirements.
-    # "somestring".encode('utf-8').hex() # hex string
     try:
-        # print('wallet : {} -> {}'.format((block_hash.encode('utf-8').hex(), wallet_hash.encode('utf-8').hex()), wallet_proof))
-
-        # print('wallet : {} -> {}'.format((block_hash, wallet_hash), hashToNumber(wallet_proof)))
         print('low    : {} -> {}'.format(prevLow, hashToNumber(low)))
         print('high   : {} -> {}'.format(prevHigh, hashToNumber(high)))
         print('last   : {} -> {}'.format(prev, hashToNumber(block_hash)))
